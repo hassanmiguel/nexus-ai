@@ -1,0 +1,10 @@
+fastapi>=0.110
+uvicorn[standard]>=0.27
+httpx>=0.27
+beautifulsoup4>=4.12
+pydantic>=2.6
+psutil>=5.9
+
+# Optional embedded GGUF inference (not required for NEXUS Core or Ollama).
+# Install manually when you want the llama.cpp provider:
+#   pip install llama-cpp-python

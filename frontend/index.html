@@ -1,0 +1,501 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NEXUS AI // Local Intelligence Core</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<canvas id="matrix" aria-hidden="true"></canvas>
+<div class="scanlines" aria-hidden="true"></div>
+<div class="shell">
+
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brandmark"><span>N</span></div>
+      <div>
+        <b>NEXUS<span>_AI</span></b>
+        <small>LOCAL INTELLIGENCE CORE</small>
+      </div>
+    </div>
+
+    <div class="navlabel">// WORKSPACE</div>
+    <nav id="nav">
+      <button class="nav active" data-page="overview"><i>◈</i><span>Overview</span><b>01</b></button>
+      <button class="nav" data-page="repos"><i>⌥</i><span>Repo Lab</span><b>02</b></button>
+      <button class="nav" data-page="chat"><i>▸</i><span>AI Chat</span><b>03</b></button>
+      <button class="nav" data-page="learning"><i>⌁</i><span>Auto Research</span><b>04</b></button>
+      <button class="nav" data-page="knowledge"><i>▤</i><span>Knowledge</span><b>05</b></button>
+      <button class="nav" data-page="memory"><i>◌</i><span>Memory</span><b>06</b></button>
+      <button class="nav" data-page="graph"><i>⌘</i><span>Graph</span><b>07</b></button>
+      <button class="nav" data-page="tasks"><i>☷</i><span>Tasks</span><b>08</b></button>
+      <button class="nav" data-page="activity"><i>⌗</i><span>Activity</span><b>09</b></button>
+      <button class="nav" data-page="experiments"><i>⚗</i><span>Experiments</span><b>10</b></button>
+      <button class="nav" data-page="analytics"><i>▥</i><span>Analytics</span><b>11</b></button>
+      <button class="nav" data-page="models"><i>⬡</i><span>Providers</span><b>12</b></button>
+      <button class="nav" data-page="permissions"><i>⌂</i><span>Permissions</span><b>13</b></button>
+      <button class="nav" data-page="settings"><i>⚙</i><span>Settings</span><b>14</b></button>
+    </nav>
+
+    <div class="sidebar-bottom">
+      <button class="side-provider" onclick="showPage('models')">
+        <span class="sp-label">ACTIVE ENGINE</span>
+        <strong id="sideProvider">NEXUS CORE</strong>
+        <span class="sp-state" id="sideProviderState">INITIALISING</span>
+      </button>
+      <div class="local-pill">
+        <i></i>
+        <span>LOCAL RUNTIME</span>
+        <b id="sideModel">CHECKING</b>
+      </div>
+      <small>NEXUS_AI <span id="sideVersion">v0.4.0</span><br><span>PRIVATE BY DESIGN</span></small>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div class="topbar-title">
+        <div class="eyebrow">NEXUS_AI <span>//</span> <span id="crumb">OVERVIEW</span></div>
+        <h1 id="pageTitle">Command Center</h1>
+      </div>
+      <div class="topright">
+        <div class="provider-switch" id="providerSwitch" title="Switch inference engine"></div>
+        <div class="status-chip"><i id="statusDot"></i><span id="statusText">CONNECTING</span></div>
+        <div class="avatar">NX</div>
+      </div>
+    </header>
+
+    <!-- OVERVIEW -->
+    <section id="overview" class="page active">
+      <div class="hero">
+        <div class="hero-copy">
+          <div class="eyebrow cyan">AUTONOMOUS CORE // <span id="heroProvider">NEXUS CORE</span></div>
+          <h2>Build. Learn.<br><em>Remember.</em></h2>
+          <p>Teach NEXUS a GitHub repository, let the research agent crawl, verify and store knowledge, or flip on a local generative engine. Everything lives on your machine.</p>
+          <div class="hero-actions">
+            <button class="primary" onclick="agentAction('start')">▶ Start Agent</button>
+            <button class="secondary" onclick="showPage('repos')">Learn a Repo <span>↗</span></button>
+            <button class="ghost" onclick="showPage('chat')">Open Chat <span>→</span></button>
+          </div>
+          <div class="hero-tags">
+            <span class="tag">NO API KEYS</span>
+            <span class="tag">REPO INDEXING</span>
+            <span class="tag">PERMISSION GATED</span>
+          </div>
+        </div>
+        <div class="core" id="coreVisual">
+          <div class="core-stars"></div>
+          <div class="ring r1"><i></i></div>
+          <div class="ring r2"><i></i></div>
+          <div class="ring r3"><i></i></div>
+          <div class="ring r4"><i></i></div>
+          <div class="core-sphere">
+            <div class="core-glow"></div>
+            <div class="core-grid"></div>
+            <span class="core-glyph">N</span>
+          </div>
+          <div class="core-scan"></div>
+          <div class="core-caption">NEXUS_CORE <span id="orbState">STANDBY</span></div>
+          <div class="core-code" id="coreCode">01001110 01000101 01011000</div>
+        </div>
+      </div>
+
+      <div class="metrics">
+        <div class="metric"><label>KNOWLEDGE</label><strong id="mKnowledge">—</strong><small>verified records</small></div>
+        <div class="metric"><label>REPOSITORIES</label><strong id="mRepos">—</strong><small>learned codebases</small></div>
+        <div class="metric"><label>CODE CHUNKS</label><strong id="mChunks">—</strong><small>line-addressed</small></div>
+        <div class="metric"><label>TASKS DONE</label><strong id="mTasks">—</strong><small>research objectives</small></div>
+        <div class="metric"><label>PAGES SCANNED</label><strong id="mPages">—</strong><small>public sources</small></div>
+        <div class="metric"><label>ACTIVE ENGINE</label><strong class="modelmetric" id="mModel">—</strong><small id="modelSub">checking runtime</small></div>
+      </div>
+
+      <div class="grid2">
+        <div class="panel">
+          <div class="panelhead">
+            <div><label>LIVE OPERATIONS</label><h3>Runtime telemetry</h3></div>
+            <button class="textbtn" onclick="showPage('activity')">Stream all ↗</button>
+          </div>
+          <div id="liveEvents" class="eventlist"><div class="empty">Waiting for runtime events…</div></div>
+        </div>
+        <div class="panel">
+          <div class="panelhead"><div><label>RESEARCH CONTROL</label><h3>New objective</h3></div><span class="tag" id="objectiveMode">ASSISTED</span></div>
+          <p class="muted">Queue a question for the autonomous research loop. Pages are fetched over public HTTPS and robots.txt is respected.</p>
+          <textarea id="objective" placeholder="e.g. Compare local vector databases for AI memory: architecture, limits, benchmarks…"></textarea>
+          <button class="primary full" onclick="submitObjective()">Add objective <span>→</span></button>
+          <div class="quickcontrols">
+            <button onclick="agentAction('pause')">Ⅱ Pause</button>
+            <button onclick="agentAction('resume')">▶ Resume</button>
+            <button onclick="agentAction('stop')">■ Stop</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid3">
+        <div class="panel mini-panel">
+          <label>PERMISSIONS</label>
+          <h3>Capability gate</h3>
+          <div id="permMini" class="chip-row"></div>
+          <button class="textbtn" onclick="showPage('permissions')">Configure access ↗</button>
+        </div>
+        <div class="panel mini-panel">
+          <label>HARDWARE</label>
+          <h3 id="hwTitle">Detecting…</h3>
+          <p class="muted" id="hwText">Reading CPU, RAM and GPU telemetry.</p>
+        </div>
+        <div class="panel mini-panel">
+          <label>QUALITY</label>
+          <h3 id="qualityScore">—</h3>
+          <p class="muted">Latest autonomous research evaluation score.</p>
+          <button class="textbtn" onclick="showPage('analytics')">Open analytics ↗</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- REPO LAB -->
+    <section id="repos" class="page">
+      <div class="sectionintro">
+        <div><div class="eyebrow cyan">CODE INGESTION</div><h2>Repository Lab</h2><p>Paste a GitHub URL or a local folder. NEXUS indexes files, symbols and line-addressed chunks into permanent memory, then answers from them — even with no LLM.</p></div>
+        <span class="tag" id="repoCountTag">0 REPOS</span>
+      </div>
+      <div class="grid2 repo-grid">
+        <div class="panel">
+          <div class="panelhead"><div><label>LEARN SOMETHING NEW</label><h3>Ingest repository</h3></div><span class="tag">SAFE READ</span></div>
+          <div class="form-grid">
+            <label>GITHUB URL, owner/repo, LOCAL FOLDER OR .ZIP</label>
+            <input id="repoSource" placeholder="https://github.com/owner/project  ·  C:\projects\app  ·  owner/repo">
+            <div class="two-col">
+              <div><label>BRANCH (OPTIONAL)</label><input id="repoBranch" placeholder="main"></div>
+              <div><label>DISPLAY NAME (OPTIONAL)</label><input id="repoName" placeholder="project-name"></div>
+            </div>
+            <label>GITHUB TOKEN (PRIVATE REPOS · NEVER STORED)</label>
+            <input id="repoToken" type="password" placeholder="ghp_… (optional)" autocomplete="off">
+            <button class="primary full" id="repoIngestBtn" onclick="ingestRepo()">⌥ Learn repository</button>
+            <p class="muted">Limits: max files, file size and archive size are configurable in Settings. Binaries and vendor folders are skipped.</p>
+          </div>
+          <div id="repoProgress" class="repo-progress hidden"></div>
+        </div>
+        <div class="panel">
+          <div class="panelhead"><div><label>INDEX</label><h3>Learned repositories</h3></div><button class="textbtn" onclick="loadRepos()">Refresh ↻</button></div>
+          <div id="repoList" class="repo-list"><div class="empty">No repositories yet.</div></div>
+        </div>
+      </div>
+
+      <div class="panel hidden" id="repoDetail">
+        <div class="panelhead">
+          <div><label>REPOSITORY INSPECTOR</label><h3 id="repoDetailName">—</h3></div>
+          <div class="row-actions">
+            <span class="tag" id="repoDetailStats">—</span>
+            <button class="danger small" onclick="deleteCurrentRepo()">Delete index</button>
+          </div>
+        </div>
+        <div class="tabs" id="repoTabs">
+          <button class="tab active" data-rtab="summary">Summary</button>
+          <button class="tab" data-rtab="files">Files</button>
+          <button class="tab" data-rtab="ask">Ask this repo</button>
+        </div>
+        <div class="repo-tab active" id="rtab-summary">
+          <div id="repoSummary" class="prose"></div>
+        </div>
+        <div class="repo-tab" id="rtab-files">
+          <div class="repo-explorer">
+            <div id="repoTree" class="repo-tree"></div>
+            <div class="code-viewer">
+              <div class="code-head"><span id="codePath">Select a file</span><button class="textbtn" onclick="copyCode()">Copy</button></div>
+              <pre id="codeContent" class="code-block">// file content appears here</pre>
+            </div>
+          </div>
+        </div>
+        <div class="repo-tab" id="rtab-ask">
+          <div class="chatinput">
+            <textarea id="repoQuestion" rows="2" placeholder="Ask about architecture, a function, risks, dependencies…"></textarea>
+            <button class="primary" onclick="askRepo()">Ask ↑</button>
+          </div>
+          <div id="repoAnswer" class="prose repo-answer"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- CHAT -->
+    <section id="chat" class="page">
+      <div class="sectionintro">
+        <div><div class="eyebrow cyan">LOCAL INFERENCE</div><h2>AI Chat</h2><p id="chatSubtitle">NEXUS Core answers from what it learned — no Ollama required. Switch engines in the top bar.</p></div>
+        <div class="row-actions"><span class="tag" id="chatProviderTag">NEXUS CORE</span><span class="tag" id="chatMemoryTag">MEMORY</span></div>
+      </div>
+      <div class="chat-layout">
+        <aside class="chat-sessions panel">
+          <div class="panelhead"><div><label>THREADS</label><h3>Conversations</h3></div><button class="textbtn" onclick="newChat()">+ New</button></div>
+          <div id="conversationList" class="conversation-list"><div class="empty">No threads yet.</div></div>
+        </aside>
+        <div class="chatbox panel">
+          <div class="chat-head">
+            <div class="chat-engine"><i id="chatEngineDot"></i><b id="chatEngineName">NEXUS CORE</b><small id="chatEngineSub">offline reasoning</small></div>
+            <div class="row-actions"><button class="textbtn" onclick="exportConversation()">Export</button><button class="textbtn" onclick="clearCurrentChat()">Clear</button></div>
+          </div>
+          <div id="messages" class="messages">
+            <div class="message bot">
+              <div class="msgavatar">N</div>
+              <div class="msgbody"><b>NEXUS AI <span class="msg-time">ready</span></b><div class="md">I'm online. Ask about a repository you taught me, your research memory, or enable a generative engine for free-form work.</div>
+              <div class="msg-tools" id="welcomeTools"></div>
+              </div>
+            </div>
+          </div>
+          <div class="chatinput">
+            <textarea id="chatInput" rows="2" placeholder="Ask NEXUS anything…" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChat()}"></textarea>
+            <button class="primary" id="chatSendBtn" onclick="sendChat()">Send ↑</button>
+          </div>
+          <div class="chat-foot">
+            <span>ENTER send · SHIFT+ENTER newline</span>
+            <span id="chatRepoBadge" class="tag hidden">REPO CONTEXT</span>
+            <button class="textbtn" onclick="toggleRepoContext()">Pin repo context</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- AUTO RESEARCH -->
+    <section id="learning" class="page">
+      <div class="sectionintro">
+        <div><div class="eyebrow cyan">CONTINUOUS DISCOVERY</div><h2>Autonomous Research</h2><p>Observe → Explore → Extract → Analyze → Verify → Store → Evaluate → Plan</p></div>
+        <span class="tag" id="learningMode">ASSISTED MODE</span>
+      </div>
+      <div class="panel">
+        <div class="panelhead"><div><label>ACTIVE OBJECTIVE</label><h3 id="currentObjective">No active objective</h3></div><div class="pulse" id="learningPulse"></div></div>
+        <div class="stages">
+          <div class="stage active">01 <b>Observe</b></div><div class="stage">02 <b>Explore</b></div><div class="stage">03 <b>Extract</b></div>
+          <div class="stage">04 <b>Analyze</b></div><div class="stage">05 <b>Verify</b></div><div class="stage">06 <b>Store</b></div>
+        </div>
+        <p class="muted smallgap">Stage telemetry is recorded as runtime events. The offline NEXUS Core engine uses extractive analysis; generative providers produce richer summaries.</p>
+      </div>
+      <div class="grid2">
+        <div class="panel"><label>CONTROL</label><h3>Agent runtime</h3><div class="bigstate" id="agentState">STANDBY</div>
+          <div class="quickcontrols"><button class="primary" onclick="agentAction('start')">Start</button><button onclick="agentAction('pause')">Pause</button><button onclick="agentAction('resume')">Resume</button><button onclick="agentAction('stop')">Stop</button></div>
+          <p class="muted smallgap">Autonomous modes generate follow-up objectives. Pause/stop are always available.</p>
+        </div>
+        <div class="panel"><label>RESEARCH QUEUE</label><h3>Upcoming work</h3><div id="learningTasks" class="eventlist"><div class="empty">Queue is clear.</div></div></div>
+      </div>
+    </section>
+
+    <!-- KNOWLEDGE -->
+    <section id="knowledge" class="page">
+      <div class="sectionintro">
+        <div><div class="eyebrow cyan">PERSISTENT MEMORY</div><h2>Knowledge Base</h2><p>Research findings and repository summaries stored locally with source references.</p></div>
+        <span class="tag" id="knowledgeCount">0 RECORDS</span>
+      </div>
+      <div class="panel">
+        <div class="searchrow"><input id="knowledgeSearch" placeholder="Search stored knowledge…" oninput="loadKnowledge()"><button class="secondary" onclick="globalSearch()">Hybrid search</button></div>
+        <div id="searchResults" class="hidden"></div>
+        <div id="knowledgeList" class="knowledge-list"></div>
+      </div>
+    </section>
+
+    <!-- MEMORY -->
+    <section id="memory" class="page">
+      <div class="sectionintro">
+        <div><div class="eyebrow cyan">EXPERIENCE LAYER</div><h2>Memory Manager</h2><p>Successes, failures and lessons from the research agent, with semantic retrieval when available.</p></div>
+      </div>
+      <div class="panel">
+        <div class="searchrow"><input id="memorySearch" placeholder="Search experiences…" oninput="loadMemory()"><span class="tag">SQLITE</span></div>
+        <div id="memoryList" class="knowledge-list"></div>
+      </div>
+    </section>
+
+    <!-- GRAPH -->
+    <section id="graph" class="page">
+      <div class="sectionintro">
+        <div><div class="eyebrow cyan">CONNECTED KNOWLEDGE</div><h2>Knowledge Graph</h2><p>Topic clusters and evidence relationships derived from stored records.</p></div>
+      </div>
+      <div class="panel"><div id="graphBars" class="graph-bars"></div></div>
+      <div class="panel"><div id="graphList" class="knowledge-list"></div></div>
+    </section>
+
+    <!-- TASKS -->
+    <section id="tasks" class="page">
+      <div class="sectionintro">
+        <div><div class="eyebrow cyan">PLANNING ENGINE</div><h2>Task Manager</h2><p>Queue, monitor and inspect research objectives and their plans.</p></div>
+      </div>
+      <div class="panel">
+        <div class="chatinput"><textarea id="taskObjective" rows="2" placeholder="Add a research objective…"></textarea><button class="primary" onclick="submitTask()">Queue</button></div>
+        <div id="taskList" class="task-list"></div>
+      </div>
+    </section>
+
+    <!-- ACTIVITY -->
+    <section id="activity" class="page">
+      <div class="sectionintro">
+        <div><div class="eyebrow cyan">AUDIT TRAIL</div><h2>Activity Stream</h2><p>Real runtime events from the agent, crawler, repo indexer and permission layer.</p></div>
+        <span class="tag" id="eventCountTag">LIVE</span>
+      </div>
+      <div class="panel"><div id="allEvents" class="eventlist"></div></div>
+    </section>
+
+    <!-- EXPERIMENTS -->
+    <section id="experiments" class="page">
+      <div class="sectionintro">
+        <div><div class="eyebrow cyan">CONTROLLED SELF-IMPROVEMENT</div><h2>Experiments & Proposals</h2><p>NEXUS can suggest improvements and run isolated static checks. It never edits or deploys production code.</p></div>
+      </div>
+      <div class="panel"><h3>Improvement proposals</h3><div id="proposalList" class="knowledge-list"></div></div>
+      <div class="panel"><h3>Experiment history</h3><div id="experimentList" class="eventlist"></div></div>
+    </section>
+
+    <!-- ANALYTICS -->
+    <section id="analytics" class="page">
+      <div class="sectionintro">
+        <div><div class="eyebrow cyan">RESEARCH QUALITY</div><h2>Analytics</h2><p>Knowledge growth, claim verification, task outcomes and evaluation history.</p></div>
+      </div>
+      <div class="metrics" id="statsMetrics">
+        <div class="metric"><label>KNOWLEDGE</label><strong id="aKnowledge">—</strong><small>records</small></div>
+        <div class="metric"><label>REPO CHUNKS</label><strong id="aChunks">—</strong><small>indexed</small></div>
+        <div class="metric"><label>CORROBORATED</label><strong id="aCorroborated">—</strong><small>claims</small></div>
+        <div class="metric"><label>DISPUTED</label><strong id="aDisputed">—</strong><small>claims</small></div>
+      </div>
+      <div class="panel"><div class="panelhead"><div><label>KNOWLEDGE GROWTH</label><h3>Last 14 days</h3></div></div><div id="analyticsDaily" class="bar-chart"></div></div>
+      <div class="grid2">
+        <div class="panel"><h3>Topic distribution</h3><div id="analyticsTopics" class="topic-list"></div></div>
+        <div class="panel"><h3>Latest evaluations</h3><div id="evaluationList" class="knowledge-list"></div></div>
+      </div>
+    </section>
+
+    <!-- PROVIDERS -->
+    <section id="models" class="page">
+      <div class="sectionintro">
+        <div><div class="eyebrow cyan">INFERENCE ENGINES</div><h2>Providers</h2><p>Switch between NEXUS Core, Ollama, embedded llama.cpp and any OpenAI-compatible server. The active engine is used for chat and research generation.</p></div>
+        <button class="secondary" onclick="loadProviders()">Rescan ↻</button>
+      </div>
+      <div id="providerCards" class="provider-cards"></div>
+      <div class="grid2">
+        <div class="panel">
+          <label>OLLAMA</label><h3 id="ollamaStatus">Checking…</h3>
+          <div id="modelList" class="eventlist"></div>
+          <div class="chatinput"><input id="modelName" value="qwen2.5:3b" placeholder="model tag"><button class="primary" onclick="pullModel()">Pull model</button></div>
+          <p id="modelFeedback" class="muted"></p>
+        </div>
+        <div class="panel">
+          <label>ENGINE CONFIGURATION</label><h3>Local inference settings</h3>
+          <div class="form-grid">
+            <label>LLAMA.CPP GGUF PATH</label><input id="cfgLlamaPath" placeholder="C:\models\model.gguf">
+            <div class="two-col">
+              <div><label>LLAMA.CPP CONTEXT</label><input id="cfgLlamaCtx" type="number" min="512" max="131072"></div>
+              <div><label>GPU LAYERS</label><input id="cfgLlamaGpu" type="number" min="0" max="200"></div>
+            </div>
+            <label>OPENAI-COMPATIBLE BASE URL</label><input id="cfgOpenaiBase" placeholder="http://localhost:1234/v1">
+            <label>OPENAI-COMPATIBLE MODEL</label><input id="cfgOpenaiModel" placeholder="auto-discover if blank">
+            <label>API KEY (OPTIONAL, STORED LOCALLY)</label><input id="cfgOpenaiKey" type="password" autocomplete="off">
+            <button class="primary" onclick="saveProviderConfig()">Save engine config</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- PERMISSIONS -->
+    <section id="permissions" class="page">
+      <div class="sectionintro">
+        <div><div class="eyebrow cyan">CAPABILITY GATE</div><h2>Permissions</h2><p>NEXUS cannot touch the internet or your PC unless you explicitly enable it. Every tool call is checked, path-restricted and audited.</p></div>
+        <span class="tag" id="permStateTag">LOCKED DOWN</span>
+      </div>
+      <div class="grid2">
+        <div class="panel">
+          <div class="panelhead"><div><label>ACCESS SWITCHES</label><h3>Grant capabilities</h3></div></div>
+          <div class="toggle-list">
+            <label class="toggle"><input type="checkbox" id="permInternet"><span class="track"></span><span><b>Internet</b><small>Web search and public HTTPS fetch through the crawler.</small></span></label>
+            <label class="toggle"><input type="checkbox" id="permPcRead"><span class="track"></span><span><b>PC read</b><small>List folders, read text files, glob search, system info.</small></span></label>
+            <label class="toggle"><input type="checkbox" id="permPcWrite"><span class="track"></span><span><b>PC write</b><small>Create or overwrite files inside allowed roots only.</small></span></label>
+            <label class="toggle"><input type="checkbox" id="permShell"><span class="track"></span><span><b>Shell</b><small>PowerShell commands with destructive patterns blocked.</small></span></label>
+          </div>
+          <label>ALLOWED ROOTS (ONE PER LINE)</label>
+          <textarea id="permRoots" placeholder="C:\projects&#10;D:\notes"></textarea>
+          <label>COMMAND ALLOW-LIST (OPTIONAL · ONE PREFIX PER LINE · BLANK = DENY-LIST ONLY)</label>
+          <textarea id="permCommands" placeholder="git status&#10;npm test"></textarea>
+          <button class="primary full" onclick="savePermissions()">Save permissions</button>
+        </div>
+        <div class="panel">
+          <div class="panelhead"><div><label>TOOL CONSOLE</label><h3>Run a gated tool</h3></div><span class="tag" id="toolPermTag">—</span></div>
+          <label>TOOL</label><select id="toolSelect" onchange="toolArgsHint()"></select>
+          <label>ARGUMENTS (JSON)</label>
+          <textarea id="toolArgs" rows="5">{}</textarea>
+          <button class="primary full" onclick="runToolConsole()">Execute tool</button>
+          <pre id="toolOutput" class="code-block tool-output">// output appears here</pre>
+        </div>
+      </div>
+      <div class="grid2">
+        <div class="panel"><div class="panelhead"><div><label>AUDIT</label><h3>Permission & tool log</h3></div><button class="textbtn" onclick="loadAudit()">Refresh ↻</button></div><div id="auditList" class="eventlist"></div></div>
+        <div class="panel"><div class="panelhead"><div><label>HISTORY</label><h3>Recent tool runs</h3></div></div><div id="toolRunList" class="eventlist"></div></div>
+      </div>
+    </section>
+
+    <!-- SETTINGS -->
+    <section id="settings" class="page">
+      <div class="sectionintro">
+        <div><div class="eyebrow cyan">SYSTEM CONFIGURATION</div><h2>Settings</h2><p>Tune local inference, research limits, repository indexing and chat history.</p></div>
+        <button class="secondary" onclick="downloadExport()">Export data ⬇</button>
+      </div>
+      <div class="settings-grid">
+        <div class="panel">
+          <label>INFERENCE</label><h3>Model & context</h3>
+          <div class="form-grid">
+            <label>OLLAMA CHAT MODEL</label><input id="sModel" placeholder="qwen2.5:3b">
+            <label>EMBEDDING MODEL / PROVIDER</label><div class="two-col"><input id="sEmbedding" placeholder="nomic-embed-text"><select id="sEmbeddingProvider"><option value="auto">auto (Ollama → local)</option><option value="local">local hashing only</option><option value="ollama">Ollama only</option></select></div>
+            <div class="two-col">
+              <div><label>CONTEXT WINDOW</label><input id="sCtx" type="number" min="1024" max="131072"></div>
+              <div><label>MAX OUTPUT TOKENS</label><input id="sPredict" type="number" min="128" max="8192"></div>
+            </div>
+            <div class="two-col">
+              <div><label>CPU THREADS (0 = AUTO)</label><input id="sThreads" type="number" min="0" max="256"></div>
+              <div><label>KEEP ALIVE</label><input id="sKeepAlive" placeholder="10m"></div>
+            </div>
+            <label>CHAT HISTORY MESSAGES</label><input id="sChatHistory" type="number" min="2" max="60">
+          </div>
+        </div>
+        <div class="panel">
+          <label>RESEARCH</label><h3>Agent & verification</h3>
+          <div class="form-grid">
+            <label>OPERATING MODE</label>
+            <select id="sMode"><option value="assisted">Assisted — you supply objectives</option><option value="autonomous">Autonomous — model proposes objectives</option><option value="deep">Deep research — larger page budget</option></select>
+            <div class="two-col">
+              <div><label>PAGES PER OBJECTIVE</label><input id="sPages" type="number" min="1" max="20"></div>
+              <div><label>DEEP PAGE BUDGET</label><input id="sDeepPages" type="number" min="3" max="40"></div>
+            </div>
+            <div class="two-col">
+              <div><label>REQUEST DELAY (S)</label><input id="sDelay" type="number" min="1" max="120"></div>
+              <div><label>RESEARCH INTERVAL (S)</label><input id="sInterval" type="number" min="10" max="3600"></div>
+            </div>
+            <div class="two-col">
+              <div><label>MIN INDEPENDENT SOURCES</label><input id="sVerify" type="number" min="2" max="5"></div>
+              <div><label>AUTO-RESUME ON START</label><select id="sAutoResume"><option value="true">Enabled</option><option value="false">Disabled</option></select></div>
+            </div>
+            <label>DOMAIN ALLOWLIST (COMMA-SEPARATED · BLANK = PUBLIC HTTPS)</label><input id="sDomains" placeholder="wikipedia.org, arxiv.org">
+          </div>
+        </div>
+        <div class="panel">
+          <label>REPOSITORIES</label><h3>Index limits</h3>
+          <div class="form-grid">
+            <div class="two-col">
+              <div><label>MAX FILES</label><input id="sRepoFiles" type="number" min="50" max="5000"></div>
+              <div><label>MAX FILE KB</label><input id="sRepoKb" type="number" min="32" max="2048"></div>
+            </div>
+            <div class="two-col">
+              <div><label>MAX ARCHIVE MB</label><input id="sRepoMb" type="number" min="10" max="1000"></div>
+              <div><label>CHUNK LINES</label><input id="sChunkLines" type="number" min="20" max="300"></div>
+            </div>
+            <label>CHUNK OVERLAP LINES</label><input id="sChunkOverlap" type="number" min="0" max="100">
+            <button class="primary" onclick="saveSettings()">Save configuration</button>
+            <p class="muted">Crawling respects robots.txt and domain restrictions. Repository indexing is read-only and size-capped.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <footer>
+      <span>NEXUS_AI <b id="footVersion">v0.4.0</b></span>
+      <span>LOCAL-FIRST · REPO-AWARE · PERMISSION GATED</span>
+      <span id="footerTime"></span>
+    </footer>
+  </main>
+</div>
+<div id="toastStack" class="toast-stack"></div>
+<script src="/static/app.js"></script>
+</body>
+</html>
