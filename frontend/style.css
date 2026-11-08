@@ -507,3 +507,27 @@ footer span:last-child{margin-left:auto}
   .message{max-width:100%}
   footer span:last-child{margin-left:0}
 }
+
+/* ------------------------------------------------------- url learn & skills */
+.tag.on{color:#03110c;background:var(--green);border-color:var(--green)}
+.tag.tiny{font-size:7px;padding:2px 5px}
+.pack-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+.pack-card{display:flex;flex-direction:column;gap:4px;text-align:left;padding:10px;border:1px solid #133238;border-radius:6px;background:#061014;cursor:pointer;transition:.16s}
+.pack-card:hover:not(:disabled){border-color:#2a7a68;background:#071a1a;transform:translateY(-1px)}
+.pack-card:disabled{opacity:.4;cursor:not-allowed}
+.pack-card b{font:600 11px var(--mono);color:#d9f7ef}
+.pack-card small{font:8px var(--mono);color:#547479;line-height:1.6}
+.pack-card span{font:7px var(--mono);letter-spacing:.8px;color:var(--cyan)}
+.chunk-list{display:grid;grid-template-columns:1fr 1fr;gap:0 14px;margin-top:10px}
+.chunk-list .knowledge-card{padding:10px 0}
+.searchrow select{flex:0 0 auto;min-width:150px}
+.skill-list{display:flex;flex-direction:column;gap:6px;max-height:640px;overflow-y:auto;margin-top:8px}
+.skill-card{display:grid;grid-template-columns:1fr auto;gap:3px 8px;padding:10px 11px;border:1px solid #122c33;border-radius:6px;background:#061013;cursor:pointer;transition:.16s}
+.skill-card:hover{border-color:#2a7a68;background:#071619;transform:translateX(2px)}
+.skill-card b{font:600 11px var(--mono);color:#d9f7ef;overflow-wrap:anywhere}
+.skill-card small{grid-column:1/-1;font:8px var(--mono);color:#688a8b;line-height:1.6}
+.skill-card .skill-foot{grid-column:1/-1;font:7px var(--mono);letter-spacing:.6px;color:#3f6165}
+.skill-card.disabled{opacity:.45}
+.skill-card.disabled b{text-decoration:line-through}
+#skillDetailBody{max-height:70vh;overflow:auto}
+@media(max-width:760px){.pack-grid,.chunk-list{grid-template-columns:1fr}}

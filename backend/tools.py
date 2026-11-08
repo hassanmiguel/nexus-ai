@@ -38,6 +38,8 @@ TOOL_SPECS = [
      'description': 'Run a PowerShell command inside an allowed root (destructive commands blocked).'},
     {'name': 'learn_repo', 'permission': 'internet', 'args': {'source': 'github url / owner/repo / local path', 'branch': 'string?'},
      'description': 'Clone-index a repository into NEXUS long-term memory.'},
+    {'name': 'learn_url', 'permission': 'internet', 'args': {'url': 'https url', 'topic': 'string?', 'depth': 'int (0-1)'},
+     'description': 'Fetch, chunk and remember a public web page (robots.txt enforced).'},
 ]
 
 PERMISSION_LABELS = {
@@ -291,6 +293,17 @@ async def _learn_repo(args):
     return True, f'Repository ingestion started (repo id {repo_id}). Follow progress in Repo Lab.'
 
 
+async def _learn_url(args):
+    from .web_learn import start_learning
+    url = str(args.get('url', '')).strip()
+    if not url:
+        return False, 'A URL is required.'
+    depth = max(0, min(int(args.get('depth', 0) or 0), 1))
+    source_id = await start_learning(url, topic=args.get('topic') or None, depth=depth)
+    return True, (f'URL learning started for {url} (source id {source_id}, depth {depth}). '
+                  'Follow progress in URL Learn.')
+
+
 async def run_tool(name: str, args: dict | None = None):
     args = args or {}
     spec = next((s for s in TOOL_SPECS if s['name'] == name), None)
@@ -321,6 +334,8 @@ async def run_tool(name: str, args: dict | None = None):
             ok, output = await asyncio.to_thread(_run_command, args)
         elif name == 'learn_repo':
             ok, output = await _learn_repo(args)
+        elif name == 'learn_url':
+            ok, output = await _learn_url(args)
         else:
             ok, output = False, 'Tool not implemented.'
     except Exception as e:

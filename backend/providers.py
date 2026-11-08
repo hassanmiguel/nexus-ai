@@ -11,6 +11,7 @@ from pathlib import Path
 
 import httpx
 
+from .config import NEXUS_MODEL
 from .database import setting, set_setting
 from . import llm
 from . import native_brain
@@ -20,8 +21,8 @@ PROVIDER_IDS = ('nexus', 'ollama', 'llamacpp', 'openai')
 META = {
     'nexus': {
         'label': 'NEXUS Core',
-        'tagline': 'Own brain · fully offline · no Ollama',
-        'needs': 'Nothing. Uses indexed repositories + learned knowledge.',
+        'tagline': f'nex0.2a · own brain · fully offline · no Ollama',
+        'needs': 'Nothing. Uses indexed repositories, learned web pages, skills + memory.',
         'kind': 'native',
     },
     'ollama': {
@@ -94,7 +95,14 @@ def _llamacpp_state():
 
 async def _status_for(provider):
     if provider == 'nexus':
-        return {'online': True, 'models': ['nexus-core'], 'detail': 'Offline reasoning over learned memory.'}
+        try:
+            from .skills import stats as skill_stats
+            skill_bits = skill_stats()
+            skill_text = f"{skill_bits.get('enabled', 0)}/{skill_bits.get('total', 0)} skills active"
+        except Exception:
+            skill_text = 'skill vault loading'
+        return {'online': True, 'models': [NEXUS_MODEL],
+                'detail': f'nex0.2a offline reasoning over repos, web pages, skills + memory ({skill_text}).'}
     if provider == 'ollama':
         status = await llm.ollama_status()
         return {'online': status.get('online', False), 'models': status.get('models', []),

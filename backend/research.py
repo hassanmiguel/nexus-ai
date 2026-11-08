@@ -9,6 +9,22 @@ from .memory import store_knowledge, retrieve
 
 SEARCH_URL='https://html.duckduckgo.com/html/?q='
 
+def _allow_entries():
+    out = []
+    for raw in (setting('allowed_domains', '') or '').split(','):
+        raw = raw.strip().lower()
+        if not raw:
+            continue
+        if '://' in raw:
+            raw = urlparse(raw).hostname or ''
+        raw = raw.split('/', 1)[0].strip().rstrip('.')
+        if raw.startswith('www.'):
+            raw = raw[4:]
+        if raw:
+            out.append(raw)
+    return out
+
+
 def allowed_domain(url):
     parsed=urlparse(url);host=(parsed.hostname or '').lower()
     if parsed.scheme!='https' or not host or host in ('localhost','localhost.localdomain'): return False
@@ -16,7 +32,7 @@ def allowed_domain(url):
         addresses=[ipaddress.ip_address(host)] if all(ch in '0123456789abcdef:.' for ch in host.lower()) else [ipaddress.ip_address(x[4][0]) for x in socket.getaddrinfo(host,None)]
         if not addresses or any(not a.is_global for a in addresses): return False
     except Exception: return False
-    allow=[x.strip().lower() for x in setting('allowed_domains','').split(',') if x.strip()]
+    allow=_allow_entries()
     return not allow or any(host==d or host.endswith('.'+d) for d in allow)
 
 async def safe_get(client,url,max_redirects=5):
@@ -46,7 +62,7 @@ async def search_web(query,limit=5):
         if len(results)>=limit:break
     return results
 
-async def fetch_page(url):
+async def fetch_page(url, with_links=False):
     if not allowed_domain(url):raise ValueError('URL is not HTTPS or is outside the configured allowlist.')
     headers={'User-Agent':USER_AGENT}
     async with httpx.AsyncClient(timeout=25,follow_redirects=True,headers=headers) as c:
@@ -60,11 +76,17 @@ async def fetch_page(url):
         r=await safe_get(c,url); r.raise_for_status()
         if 'text/html' not in r.headers.get('content-type','').lower():raise ValueError('Not an HTML page.')
     soup=BeautifulSoup(r.text,'html.parser')
+    links=[]
+    if with_links:
+        for a in soup.find_all('a', href=True):
+            href=(a.get('href') or '').strip()
+            if href and not href.startswith(('#','mailto:','tel:','javascript:')):
+                links.append(href)
     for t in soup(['script','style','nav','footer','header','noscript','svg','form']):t.decompose()
     title=soup.title.get_text(' ',strip=True) if soup.title else url
     content=re.sub(r'\s+',' ',soup.get_text(' ',strip=True))[:20000]
     if len(content)<250:raise ValueError('Insufficient readable page text.')
-    return title,content
+    return (title,content,links) if with_links else (title,content)
 
 async def plan_objective(objective,mode='assisted'):
     related=await retrieve(objective,5)

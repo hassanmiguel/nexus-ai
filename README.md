@@ -1,6 +1,8 @@
 # NEXUS AI — Local, Repo-Aware Intelligence Core
 
-NEXUS AI is a Windows-first, local-first research and repository intelligence agent. It can learn an entire codebase, answer questions from what it learned, run autonomous research, and switch between four inference engines — including **NEXUS Core**, its own built-in extractive reasoning mode that needs **no Ollama and no model downloads at all**.
+NEXUS AI is a Windows-first, local-first research and repository intelligence agent. It can learn an entire codebase, learn individual web pages, install reusable skills, answer questions from what it learned, run autonomous research, and switch between four inference engines — including **NEXUS Core** (`nex0.2a`), its own built-in reasoning mode that needs **no Ollama and no model downloads at all**.
+
+Current release: **v0.5.0** (NEXUS Core engine `nex0.2a`).
 
 Everything is stored on your machine in SQLite. NEXUS does not require OpenAI, Anthropic, Google, or any hosted AI API key, and does not consume a hosted provider's token quota. Local models are still constrained by your CPU, RAM, GPU/VRAM and context windows.
 
@@ -8,7 +10,7 @@ Everything is stored on your machine in SQLite. NEXUS does not require OpenAI, A
 
 1. Install Python 3.10+.
 2. Run `start_nexus.bat` and open http://127.0.0.1:8000.
-3. That's it. **NEXUS Core works immediately with zero models.** Learn a repository or queue a research objective right away.
+3. That's it. **NEXUS Core works immediately with zero models.** Learn a repository, teach it a web page, browse the 307 offline skills, or queue a research objective right away.
 4. Optional: install [Ollama](https://ollama.com/download) and run `install_model.bat` to add generative chat with `qwen2.5:3b` and semantic embeddings with `nomic-embed-text`. You can also point NEXUS at any local OpenAI-compatible server (LM Studio, llama.cpp server, vLLM, Ollama `/v1`).
 5. Optional: run `install_autostart.bat` to launch NEXUS when you sign in to Windows. Run `uninstall_autostart.bat` to undo this.
 
@@ -20,7 +22,7 @@ Switch engines any time from the top bar or the **Providers** page. The active e
 
 | Engine | ID | Needs |
 | --- | --- | --- |
-| **NEXUS Core** | `nexus` | Nothing. Offline extractive reasoning over indexed repos and stored knowledge. |
+| **NEXUS Core** | `nexus` | Nothing. Offline `nex0.2a` reasoning over indexed repos, learned web pages, memories and skills. |
 | **Ollama** | `ollama` | Ollama daemon + a pulled chat model. |
 | **llama.cpp** | `llamacpp` | `pip install llama-cpp-python` and a local `.gguf` file. |
 | **OpenAI-compatible** | `openai` | Any local `/v1` server base URL (LM Studio, vLLM, Ollama `/v1`, llama.cpp server). |
@@ -47,6 +49,28 @@ Binaries, vendor folders, `.git`, `node_modules` and oversized files are skipped
 
 Private repos are supported with a GitHub token, which is used only for that download and is never stored.
 
+## Teach NEXUS a web page (URL Learn)
+
+Open **URL Learn** and paste a public HTTPS URL — a greeting guide, a programming tutorial, a library reference, an article. NEXUS fetches the page, checks `robots.txt`, extracts readable text, splits it into overlapping chunks, embeds them and stores everything in SQLite. You can:
+
+- learn one page, or follow one level of same-site links
+- use starter packs for **greetings, programming, Python and AI/local models**
+- search learned pages by meaning and by keyword
+- inspect stored chunks with their source URL
+- delete a page and its chunks at any time
+
+URL learning requires the **Internet** permission and is limited to public HTTPS destinations. Only hosts on the configured allow-list are accepted; entries may be hostnames or full URLs (`https://www.wikipedia.org/` becomes `wikipedia.org`). Fetched text is quoted as evidence only — instructions inside a page are never executed or followed.
+
+## Skill Vault (Antigravity)
+
+The **Skills** page ships an offline vault of **307 skills** from the Antigravity skill collection, covering architecture, API design, debugging, security, Python, data, AI, infrastructure and more. Skills are seeded automatically on first start; no internet is required for the built-in snapshot.
+
+- browse, search and filter skills by category and bundle
+- open a skill to read its full playbook
+- enable or disable skills; disabled skills are excluded from retrieval
+- re-import the latest vault from GitHub (`rmyndharis/antigravity-skills`) when internet is enabled
+- matching skills are injected into chat as reference guidance only, never as higher-priority instructions
+
 ## Permission-gated internet and PC access
 
 NEXUS cannot touch the internet or your PC unless you explicitly grant it in **Permissions**. All four capabilities are **closed by default**:
@@ -71,7 +95,7 @@ Tool console and history are on the Permissions page. Tool runs return structure
 ## Features
 
 1. **Four-provider architecture** with live online/offline status and per-engine testing.
-2. **NEXUS Core offline brain** — extractive answers from repo chunks and knowledge, with a researcher prompt handler, no external model.
+2. **NEXUS Core offline brain (`nex0.2a`)** — grounded answers from repo chunks, learned web pages, memories and skills, with greetings, identity, follow-up expansion, confidence scoring and no external model.
 3. **Repository learning** — GitHub/local/zip ingest, file tree, code viewer, repo-grounded Q&A, hybrid chunk search.
 4. **Persistent long-term memory** — SQLite knowledge and experience memories survive restarts; successes and failures are stored as lessons.
 5. **Dual embedding retrieval** — Ollama embeddings plus a deterministic local hashing embedder, combined with lexical relevance.
@@ -83,10 +107,13 @@ Tool console and history are on the Permissions page. Tool runs return structure
 11. **Streaming chat** — SSE token streaming, markdown/code rendering, conversation threads and export.
 12. **Live activity stream** — WebSocket event feed for research, repo indexing, providers and permissions.
 13. **Code-themed UI** — animated NEXUS core with orbital rings, matrix/grid background, terminal aesthetic, responsive layout.
+14. **URL learning** — robots-respecting web-page ingest with starter packs, chunk storage, search and per-page delete.
+15. **Skill vault** — 307 offline Antigravity skills plus permission-gated GitHub refresh, bundles, toggles and chat guidance.
+16. **Scalable retrieval** — two-stage lexical shortlist plus semantic rerank keeps chat fast as the repo index grows past 10,000 chunks; skill vectors are cached.
 
 ## Research safety and limits
 
-- Research is limited to public HTTPS HTML pages. `robots.txt` is checked and a page is skipped if the check fails or disallows access.
+- Research and URL learning are limited to public HTTPS HTML pages. `robots.txt` is checked and a page is skipped if the check fails or disallows access. URL learning also requires the Internet permission and the configured host allow-list.
 - The crawler uses DuckDuckGo HTML search and HTTP/BeautifulSoup extraction, not a full interactive browser.
 - It does not bypass logins, paywalls, CAPTCHAs, rate limits or access controls, and does not execute downloaded code.
 - Source domains are treated as independent units for corroboration, but ownership/syndication relationships are not independently resolved. A language model can misread evidence; inspect source links, especially for high-stakes decisions.
@@ -96,7 +123,7 @@ Tool console and history are on the Permissions page. Tool runs return structure
 
 ## Data and privacy
 
-The database lives at `data/nexus.db`; embeddings and repo indexes are stored locally in SQLite. Back up this file before moving or upgrading. Web research and repo downloads necessarily send ordinary HTTP requests to public sources. Chat prompts and local memory are sent only to the engine you selected — and NEXUS Core sends nothing off the machine.
+The database lives at `data/nexus.db`; embeddings, repo indexes, learned web pages and the skill vault are stored locally in SQLite. Back up this file before moving or upgrading. Web research, URL learning and repo/skill downloads necessarily send ordinary HTTP requests to public sources. Chat prompts and local memory are sent only to the engine you selected — and NEXUS Core sends nothing off the machine.
 
 ## Developer run
 
@@ -127,6 +154,10 @@ pip install llama-cpp-python
 - `GET /api/models`, `POST /api/models/pull`
 - `POST /api/repos/ingest`, `GET /api/repos`, `GET /api/repos/{id}`
 - `GET /api/repos/{id}/file?path=...`, `DELETE /api/repos/{id}`, `POST /api/repos/search`
+- `POST /api/learn/url`, `GET /api/learn/url`, `GET|DELETE /api/learn/url/{id}`, `POST /api/learn/url/search`
+- `GET /api/learn/packs`, `POST /api/learn/pack`
+- `GET /api/skills`, `GET /api/skills/stats`, `GET|DELETE /api/skills/{id}`, `POST /api/skills/{id}/toggle`
+- `POST /api/skills/import`, `POST /api/skills/seed`, `GET /api/skills/imports`, `POST /api/skills/search`
 - `POST /api/chat`, `POST /api/chat/stream` (SSE)
 - `GET /api/conversations`, `GET|DELETE /api/conversations/{id}`, `POST /api/conversations/{id}/rename`
 - `POST /api/tasks`, `GET /api/tasks/{id}/plan`, `POST /api/agent/start|pause|resume|stop`

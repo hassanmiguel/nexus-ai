@@ -21,7 +21,7 @@ import httpx
 from .database import connect, now, event, read_int, setting
 from .llm import local_embed
 from .memory import store_knowledge
-from .textutil import (extract_symbols, language_from_path, lexical_score,
+from .textutil import (extract_symbols, keywords, language_from_path, lexical_score,
                        parse_version_files, summarize_text, clip)
 
 IGNORE_DIRS = {
@@ -530,36 +530,65 @@ def build_tree(repo_id):
 
 
 async def search_chunks(query, repo_id=None, limit=8):
+    """Two-stage retrieval: cheap lexical shortlist, then semantic rerank.
+
+    The index can hold tens of thousands of chunks; scoring every embedding on
+    every query makes chat latency unacceptable. Lexical scoring is ~10x cheaper,
+    so we shortlist candidates first and only decode/rerank those vectors.
+    """
     qvec = local_embed(query)
-    sql = 'SELECT rc.id,rc.repo_id,rc.path,rc.start_line,rc.end_line,rc.content,rc.embedding,rc.embedding_kind,r.name repo_name ' \
-          'FROM repo_chunks rc JOIN repos r ON r.id=rc.repo_id'
+    qnorm = math.sqrt(sum(a * a for a in qvec)) or 1.0
+    base_sql = ('SELECT rc.id,rc.repo_id,rc.path,rc.start_line,rc.end_line,rc.content,rc.embedding,rc.embedding_kind,r.name repo_name '
+                'FROM repo_chunks rc JOIN repos r ON r.id=rc.repo_id')
     params = []
+    where = []
     if repo_id:
-        sql += ' WHERE rc.repo_id=?'
+        where.append('rc.repo_id=?')
         params.append(repo_id)
-    sql += ' ORDER BY rc.id DESC LIMIT 16000'
+    kws = keywords(query, 8)
+    if kws:
+        where.append('(' + ' OR '.join(['rc.content LIKE ?'] * len(kws)) + ')')
+        params.extend(f'%{k}%' for k in kws)
+    sql = base_sql
+    if where:
+        sql += ' WHERE ' + ' AND '.join(where)
+    row_limit = 1000 if kws else 200
     with connect() as db:
-        rows = [dict(r) for r in db.execute(sql, params).fetchall()]
-    scored = []
+        rows = [dict(r) for r in db.execute(sql + f' ORDER BY rc.id DESC LIMIT {row_limit}', params).fetchall()]
+        if len(rows) < 40:
+            recent = [dict(r) for r in db.execute(base_sql + ' ORDER BY rc.id DESC LIMIT 200').fetchall()]
+            seen = {r['id'] for r in rows}
+            rows.extend(r for r in recent if r['id'] not in seen)
+    lexical = []
     for row in rows:
+        score = lexical_score(query, row['content'])
+        if score > 0.002:
+            lexical.append((score, row))
+    lexical.sort(key=lambda x: x[0], reverse=True)
+    shortlist = lexical[:240]
+    if len(shortlist) < 60:
+        seen = {id(row) for _, row in shortlist}
+        for row in rows[:120]:
+            if id(row) not in seen:
+                shortlist.append((0.0, row))
+    scored = []
+    for base, row in shortlist:
         semantic = 0.0
         if row.get('embedding') and (row.get('embedding_kind') or 'local') == 'local':
             try:
                 vec = json.loads(row['embedding'])
                 if len(vec) == len(qvec):
                     dot = sum(a * b for a, b in zip(qvec, vec))
-                    na = math.sqrt(sum(a * a for a in qvec)) or 1
-                    nb = math.sqrt(sum(b * b for b in vec)) or 1
-                    semantic = dot / (na * nb)
+                    nb = math.sqrt(sum(b * b for b in vec)) or 1.0
+                    semantic = dot / (qnorm * nb)
             except Exception:
                 pass
-        lexical = lexical_score(query, row['content'])
-        score = semantic * 0.68 + min(lexical, 1.2) * 0.32 if semantic else lexical
+        score = semantic * 0.68 + min(base, 1.2) * 0.32 if semantic else base
         if score > 0.002:
             row['score'] = round(score, 4)
             row.pop('embedding', None)
             scored.append(row)
-    scored.sort(key=lambda x: x['score'], reverse=True)
+    scored.sort(key=lambda x: (x['score'], -x['id']), reverse=True)
     return scored[:max(1, min(limit, 30))]
 
 

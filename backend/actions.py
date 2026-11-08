@@ -38,6 +38,10 @@ async def execute_intents(message: str):
     if m:
         jobs.append(('learn_repo', {'source': _unquote(m.group(1))}))
 
+    if _match(r'\b(?:url\s+learn|learn\s+(?:this\s+|the\s+|a\s+)?(?:url|page|website|article|link)|teach\s+(?:you|yourself)\s+(?:a\s+|this\s+|the\s+)?(?:url|page|website))\b', text):
+        for m in re.finditer(r'https?://[^\s<>"\']+', text):
+            jobs.append(('learn_url', {'url': m.group(0).rstrip('.,);')}))
+
     m = _match(r'(?:read|cat)\s+(?:the\s+)?(?:file\s+)?["\']([^"\']+)["\']', text)
     if not m:
         m = _match(r'(?:read|cat)\s+(?:the\s+)?(?:file\s+)?([A-Za-z]:\\[^\n]+|~[/\\][^\n]+)', text)

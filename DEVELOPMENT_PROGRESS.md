@@ -5,6 +5,7 @@
 ### Inference and providers
 - [x] Four-provider architecture: `nexus`, `ollama`, `llamacpp`, `openai`
 - [x] NEXUS Core offline extractive brain — works with zero models and no Ollama
+- [x] NEXUS Core `nex0.2a`: greetings, identity, capabilities, follow-up expansion, URL guidance, confidence scoring and direct-answer synthesis
 - [x] Provider catalog with live online/offline status, per-engine test and runtime switching
 - [x] Streaming chat over SSE with markdown/code rendering and conversation threads
 - [x] Optional embedded GGUF inference via `llama-cpp-python`
@@ -18,11 +19,29 @@
 - [x] File tree, code viewer, repo-grounded Q&A and hybrid chunk search
 - [x] Repository summary/architecture generation and per-repo delete
 
+### URL learning
+- [x] Learn a public HTTPS page with robots.txt enforcement and allow-list checks
+- [x] One-level same-site link following and configurable chunk size/overlap
+- [x] Starter packs: greetings, programming, Python and AI/local models
+- [x] Persistent `web_sources` + `web_chunks` tables with status/progress metadata
+- [x] Semantic + lexical search, page inspector, chunk browsing and per-page delete
+- [x] Permission-gated ingest and natural-language "learn this URL" intent
+
+### Skill vault (Antigravity)
+- [x] 307 bundled skills seeded offline on first start (~2 MB snapshot)
+- [x] `SKILL.md` frontmatter parsing, categories, tags, triggers and bundles
+- [x] Search, filter, detail view, enable/disable and delete
+- [x] Permission-gated GitHub re-import with import history
+- [x] Automatic skill guidance injected into chat as reference-only context
+- [x] Cached per-skill retrieval vectors
+
 ### Memory and retrieval
 - [x] Dual embedding spaces: Ollama embeddings + deterministic local hashing embedder
 - [x] Hybrid cosine/lexical retrieval that works even without an embedding model
 - [x] Persistent SQLite knowledge and experience memory across restarts
 - [x] Experience lessons from successes and failures
+- [x] Two-stage repo retrieval (keyword SQL prefilter + lexical shortlist + semantic rerank) for 10k+ chunk indexes
+- [x] Cached skill vectors; warm skill retrieval drops to well under 100 ms
 
 ### Permissions and tools
 - [x] Closed-by-default capability gate: internet, pc_read, pc_write, shell
@@ -46,9 +65,10 @@
 ### Interface
 - [x] Full code/cyber-themed rewrite: terminal aesthetic, matrix/grid background
 - [x] Animated NEXUS core sphere with four orbital rings and scan line
-- [x] Pages: Overview, Repo Lab, AI Chat, Auto Research, Knowledge, Memory, Graph, Tasks, Activity, Experiments, Analytics, Providers, Permissions, Settings
+- [x] Pages: Overview, Repo Lab, URL Learn, Skills, AI Chat, Auto Research, Knowledge, Memory, Graph, Tasks, Activity, Experiments, Analytics, Providers, Permissions, Settings
 - [x] Provider switcher, live WebSocket activity stream, toasts, responsive layout
 - [x] Dashboard views for memory, topic clusters, proposals, experiments and analytics
+- [x] URL Learn and Skill Vault pages with progress polling, packs, search, detail inspectors and toggles
 
 ## Remaining engineering work
 

@@ -31,6 +31,10 @@ CREATE TABLE IF NOT EXISTS conversations(id INTEGER PRIMARY KEY AUTOINCREMENT,ti
 CREATE TABLE IF NOT EXISTS messages(id INTEGER PRIMARY KEY AUTOINCREMENT,conversation_id INTEGER NOT NULL,role TEXT NOT NULL,content TEXT NOT NULL,meta TEXT DEFAULT '',created_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS audit_log(id INTEGER PRIMARY KEY AUTOINCREMENT,action TEXT NOT NULL,detail TEXT DEFAULT '',allowed INTEGER DEFAULT 1,created_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS tool_runs(id INTEGER PRIMARY KEY AUTOINCREMENT,tool TEXT NOT NULL,args TEXT DEFAULT '',result TEXT DEFAULT '',status TEXT DEFAULT 'ok',created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS web_sources(id INTEGER PRIMARY KEY AUTOINCREMENT,url TEXT NOT NULL,final_url TEXT,title TEXT,topic TEXT DEFAULT 'web',status TEXT DEFAULT 'queued',depth INTEGER DEFAULT 0,root_id INTEGER,char_count INTEGER DEFAULT 0,chunk_count INTEGER DEFAULT 0,summary TEXT DEFAULT '',meta TEXT DEFAULT '',created_at TEXT NOT NULL,updated_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS web_chunks(id INTEGER PRIMARY KEY AUTOINCREMENT,source_id INTEGER NOT NULL,url TEXT,title TEXT,ordinal INTEGER DEFAULT 0,content TEXT NOT NULL,embedding TEXT,embedding_kind TEXT,created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS skills(id INTEGER PRIMARY KEY AUTOINCREMENT,skill_id TEXT UNIQUE NOT NULL,name TEXT NOT NULL,description TEXT DEFAULT '',category TEXT DEFAULT 'general',tags TEXT DEFAULT '',triggers TEXT DEFAULT '',bundles TEXT DEFAULT '',content TEXT DEFAULT '',source TEXT DEFAULT '',source_path TEXT DEFAULT '',enabled INTEGER DEFAULT 1,created_at TEXT NOT NULL,updated_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS skill_imports(id INTEGER PRIMARY KEY AUTOINCREMENT,source TEXT NOT NULL,status TEXT DEFAULT 'queued',imported INTEGER DEFAULT 0,skipped INTEGER DEFAULT 0,detail TEXT DEFAULT '',created_at TEXT NOT NULL,updated_at TEXT NOT NULL);
 '''
 
 INDEXES = '''
@@ -42,6 +46,11 @@ CREATE INDEX IF NOT EXISTS idx_repo_files_repo ON repo_files(repo_id);
 CREATE INDEX IF NOT EXISTS idx_repo_chunks_repo ON repo_chunks(repo_id);
 CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id);
 CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_log(id);
+CREATE INDEX IF NOT EXISTS idx_web_sources_status ON web_sources(status);
+CREATE INDEX IF NOT EXISTS idx_web_sources_root ON web_sources(root_id);
+CREATE INDEX IF NOT EXISTS idx_web_chunks_source ON web_chunks(source_id);
+CREATE INDEX IF NOT EXISTS idx_skills_category ON skills(category);
+CREATE INDEX IF NOT EXISTS idx_skills_enabled ON skills(enabled);
 '''
 
 # Every value used by the UI/backend. Keeping them in one place makes upgrades safe.
@@ -78,6 +87,16 @@ DEFAULTS = {
     'max_repo_mb': '300',
     'repo_chunk_lines': '80',
     'repo_chunk_overlap': '12',
+    # url learning --------------------------------------------------------------
+    'learn_depth': '0',
+    'learn_max_links': '8',
+    'web_chunk_chars': '1200',
+    'web_chunk_overlap': '180',
+    'max_web_pages': '40',
+    # skills (antigravity vault) ------------------------------------------------
+    'skills_auto_context': 'true',
+    'skills_seed_version': '',
+    'skills_repo': 'https://github.com/rmyndharis/antigravity-skills',
     # permissions (default closed) ---------------------------------------------
     'permission_internet': 'false',
     'permission_pc_read': 'false',
@@ -101,6 +120,9 @@ def init_db():
             'tasks': [('priority', 'INTEGER DEFAULT 5'), ('parent_id', 'INTEGER'),
                       ('mode', "TEXT DEFAULT 'assisted'"), ('attempts', 'INTEGER DEFAULT 0')],
             'memories': [('embedding_kind', 'TEXT')],
+            'web_sources': [('root_id', 'INTEGER'), ('depth', 'INTEGER DEFAULT 0'), ('summary', "TEXT DEFAULT ''"),
+                            ('char_count', 'INTEGER DEFAULT 0'), ('chunk_count', 'INTEGER DEFAULT 0')],
+            'skills': [('bundles', "TEXT DEFAULT ''"), ('enabled', 'INTEGER DEFAULT 1'), ('triggers', "TEXT DEFAULT ''")],
         }.items():
             existing = {r['name'] for r in db.execute(f'PRAGMA table_info({table})')}
             for name, typ in columns:

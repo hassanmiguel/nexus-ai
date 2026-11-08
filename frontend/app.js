@@ -5,7 +5,8 @@ const $ = (id) => document.getElementById(id);
 const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
 const titles = {
-  overview: 'Command Center', repos: 'Repository Lab', chat: 'AI Chat',
+  overview: 'Command Center', repos: 'Repository Lab', urllearn: 'URL Learn',
+  skills: 'Skill Vault', chat: 'AI Chat',
   learning: 'Autonomous Research', knowledge: 'Knowledge Base', memory: 'Memory Manager',
   graph: 'Knowledge Graph', tasks: 'Task Manager', activity: 'Activity Stream',
   experiments: 'Experiments', analytics: 'Analytics', models: 'Providers',
@@ -15,12 +16,15 @@ const titles = {
 const state = {
   status: null, providers: [], provider: 'nexus', repos: [],
   currentRepo: null, conversation: null, messages: [], repoContext: null,
-  tools: [], permissions: null, sending: false, refreshing: false
+  tools: [], permissions: null, sending: false, refreshing: false,
+  webSources: [], currentWeb: null, skills: [], currentSkill: null, skillMeta: null
 };
 
 const PAGE_LOADERS = {
   overview: () => { },
   repos: () => loadRepos(),
+  urllearn: () => loadUrlLearn(),
+  skills: () => loadSkillPage(),
   chat: () => { loadConversations(); refreshRepoSelect(); updateChatEngine(); },
   learning: () => loadTasks(),
   knowledge: () => loadKnowledge(),
@@ -197,8 +201,8 @@ function updateStatusUI(s) {
   $('mModel').textContent = String(provider.label || '—').toUpperCase();
   $('modelSub').textContent = provider.online ? ((provider.models || [])[0] || 'ready') : 'offline';
   $('sideModel').textContent = String(provider.label || 'CHECKING').toUpperCase();
-  $('sideVersion').textContent = 'v' + (s.version || '0.4.0');
-  $('footVersion').textContent = 'v' + (s.version || '0.4.0');
+  $('sideVersion').textContent = 'v' + (s.version || '0.5.0');
+  $('footVersion').textContent = 'v' + (s.version || '0.5.0');
   $('statusText').textContent = s.running ? (s.paused ? 'PAUSED' : 'AGENT ONLINE') : 'CORE READY';
   $('statusDot').style.background = s.running ? (s.paused ? '#ffc857' : '#39ff9a') : '#39ff9a';
   $('statusDot').style.boxShadow = '0 0 10px ' + (s.running ? (s.paused ? '#ffc857' : '#39ff9a') : '#39ff9a');
@@ -218,6 +222,7 @@ function updateStatusUI(s) {
     '<span class="chip ' + (perms[key] ? 'on' : '') + '">' + key.toUpperCase() + '</span>'
   )).join('');
   state.providers = s.providers || state.providers;
+  state.permissions = s.permissions || state.permissions;
   state.provider = (s.provider && s.provider.id) || state.provider;
   renderProviderSwitch();
   updateChatEngine();
@@ -433,6 +438,285 @@ async function deleteCurrentRepo() {
     $('repoDetail').classList.add('hidden');
     toast('Repository index deleted.');
     loadRepos(); refresh();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+/* ---------------------------------------------------------------- url learn */
+function webCard(s) {
+  const phase = (s.meta && s.meta.phase) ? s.meta.phase : '';
+  const active = state.currentWeb && state.currentWeb.id === s.id ? 'active' : '';
+  return '<div class="repo-card ' + active + '" data-web="' + s.id + '">' +
+    '<span class="repo-state ' + esc(s.status) + '">' + esc(String(s.status || '').toUpperCase()) + '</span>' +
+    '<h4>' + esc(s.title || s.url) + '</h4>' +
+    '<small>' + esc(s.topic || 'web') + ' · ' + num(s.chunk_count) + ' chunks · depth ' + (s.depth || 0) +
+    (phase && s.status !== 'ready' ? ' · ' + esc(phase) : '') + '<br>' + esc(clip(s.url, 90)) + '</small>' +
+    '</div>';
+}
+function renderWebSources() {
+  const list = $('webList');
+  if (!list) return;
+  list.innerHTML = state.webSources.map(webCard).join('') || '<div class="empty">No pages learned yet. Paste a public HTTPS URL on the left.</div>';
+  $('webCountTag').textContent = state.webSources.length + ' PAGES';
+  const perm = state.permissions || {};
+  $('webPermTag').textContent = perm.internet ? 'INTERNET ON' : 'INTERNET OFF';
+  $('webPermTag').className = 'tag' + (perm.internet ? ' on' : '');
+}
+async function loadUrlLearn() {
+  try {
+    const [sources, packs, perms] = await Promise.all([api('/learn/url'), api('/learn/packs'), api('/permissions')]);
+    state.webSources = sources;
+    state.permissions = perms;
+    renderWebSources();
+    const canLearn = !!perms.internet;
+    $('webPacks').innerHTML = (packs || []).map((p) => (
+      '<button class="pack-card" data-pack="' + esc(p.id) + '"' + (canLearn ? '' : ' disabled') + '>' +
+      '<b>' + esc(p.label) + '</b><small>' + esc(p.description) + '</small>' +
+      '<span>' + (p.urls || []).length + ' sources</span></button>'
+    )).join('') || '<div class="empty">No packs available.</div>';
+  } catch (e) { toast(e.message, 'error'); }
+}
+async function learnUrl() {
+  const url = $('webUrl').value.trim();
+  if (!url) return toast('Paste a public HTTPS URL.', 'warn');
+  const button = $('webLearnBtn');
+  button.disabled = true; button.textContent = '⟳ Starting…';
+  $('webProgress').classList.remove('hidden');
+  $('webProgress').textContent = 'Submitting URL…';
+  try {
+    const result = await api('/learn/url', {
+      method: 'POST',
+      body: JSON.stringify({
+        url,
+        topic: $('webTopic').value.trim() || null,
+        depth: Number($('webDepth').value || 0)
+      })
+    });
+    toast('URL queued for learning (id ' + result.id + ').');
+    pollWebSource(result.id, button);
+  } catch (e) {
+    toast(e.message, 'error');
+    button.disabled = false; button.textContent = '⇲ Learn URL';
+    $('webProgress').textContent = 'ERROR · ' + e.message;
+  }
+}
+function pollWebSource(id, button) {
+  let ticks = 0;
+  const timer = setInterval(async () => {
+    ticks += 1;
+    try {
+      const sources = await api('/learn/url');
+      state.webSources = sources;
+      renderWebSources();
+      const row = sources.find((s) => s.id === id);
+      if (row) {
+        const phase = (row.meta && row.meta.phase) ? row.meta.phase : '';
+        $('webProgress').textContent = 'Page #' + row.id + ' · ' + String(row.status || '').toUpperCase() +
+          (phase ? ' · ' + phase : '') + ' · ' + (row.chunk_count || 0) + ' chunks' +
+          (row.meta && row.meta.error ? '\n' + row.meta.error : '');
+        if (row.status === 'ready' || row.status === 'failed') {
+          clearInterval(timer);
+          button.disabled = false; button.textContent = '⇲ Learn URL';
+          if (row.status === 'ready') {
+            toast('Page learned: ' + (row.title || row.url) + ' (' + row.chunk_count + ' chunks).');
+            $('webUrl').value = '';
+            await selectWebSource(row.id);
+            refresh();
+          } else {
+            toast('URL learning failed. Check the progress panel.', 'error');
+          }
+        }
+      }
+      if (ticks > 240) { clearInterval(timer); button.disabled = false; button.textContent = '⇲ Learn URL'; }
+    } catch { }
+  }, 1600);
+}
+async function learnPack(packId) {
+  try {
+    const result = await api('/learn/pack', { method: 'POST', body: JSON.stringify({ pack: packId }) });
+    toast('Queued ' + result.queued + ' page(s) from the ' + packId + ' pack.');
+    $('webProgress').classList.remove('hidden');
+    $('webProgress').textContent = 'Pack ' + packId + ' queued (' + result.queued + ' pages). Watch the index and Activity stream.';
+    setTimeout(loadUrlLearn, 1500);
+  } catch (e) { toast(e.message, 'error'); }
+}
+async function selectWebSource(id) {
+  try {
+    const data = await api('/learn/url/' + id);
+    const source = data.source || {};
+    state.currentWeb = source;
+    $('webDetail').classList.remove('hidden');
+    $('webDetailTitle').textContent = source.title || source.url;
+    $('webDetailStats').textContent = String(source.status || '').toUpperCase() + ' · ' + (source.chunk_count || 0) + ' CHUNKS · ' + (source.topic || 'web');
+    $('webSummary').innerHTML = md(source.summary || 'No summary stored yet.') +
+      (source.url ? '<p><a href="' + esc(source.url) + '" target="_blank" rel="noopener">' + esc(clip(source.url, 100)) + ' ↗</a></p>' : '');
+    $('webChunks').innerHTML = (data.chunks || []).map((c) => (
+      '<article class="knowledge-card"><div class="knowledge-meta">CHUNK ' + (c.ordinal + 1) + '</div><p>' + esc(clip(c.content, 900)) + '</p></article>'
+    )).join('') || '<div class="empty">No chunks stored for this page.</div>';
+    renderWebSources();
+    $('webDetail').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  } catch (e) { toast(e.message, 'error'); }
+}
+async function deleteWebSource() {
+  if (!state.currentWeb) return;
+  if (!confirm('Delete this learned page and its chunks?')) return;
+  try {
+    await api('/learn/url/' + state.currentWeb.id, { method: 'DELETE' });
+    state.currentWeb = null;
+    $('webDetail').classList.add('hidden');
+    toast('Learned page deleted.');
+    loadUrlLearn(); refresh();
+  } catch (e) { toast(e.message, 'error'); }
+}
+async function searchWeb() {
+  const query = $('webSearch').value.trim();
+  if (!query) return toast('Type a query first.', 'warn');
+  try {
+    const rows = await api('/learn/url/search', { method: 'POST', body: JSON.stringify({ q: query, limit: 10 }) });
+    $('webResults').classList.remove('hidden');
+    $('webResults').innerHTML = rows.map((r) => (
+      '<article class="knowledge-card"><h4>' + esc(r.source_title || r.title || r.url) + '</h4>' +
+      '<div class="knowledge-meta">CHUNK ' + (r.ordinal + 1) + ' · SCORE ' + r.score + ' · ' + esc(r.topic || 'web') + '</div>' +
+      '<p>' + esc(clip(r.content, 800)) + '</p><a href="' + esc(r.url) + '" target="_blank" rel="noopener">' + esc(clip(r.url, 90)) + ' ↗</a></article>'
+    )).join('') || '<div class="empty">No web chunks matched.</div>';
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+/* --------------------------------------------------------------- skill vault */
+function skillCard(s) {
+  return '<div class="skill-card ' + (s.enabled ? '' : 'disabled') + '" data-skill="' + esc(s.skill_id) + '">' +
+    '<b>' + esc(s.name) + '</b>' +
+    '<span class="tag tiny">' + esc(s.category || 'general') + '</span>' +
+    '<small>' + esc(clip(s.description || 'No description.', 210)) + '</small>' +
+    '<span class="skill-foot">' + (s.bundles && s.bundles.length ? esc(s.bundles.join(' · ')) : 'standalone') +
+    ' · ' + num(s.content_length) + ' chars</span>' +
+    '</div>';
+}
+function renderSkills() {
+  const list = $('skillList');
+  if (!list) return;
+  list.innerHTML = state.skills.map(skillCard).join('') || '<div class="empty">No skills match that filter.</div>';
+}
+async function loadSkillPage() {
+  await Promise.all([loadSkills(), loadSkillImports()]);
+}
+async function loadSkills() {
+  try {
+    const query = $('skillSearch') ? $('skillSearch').value.trim() : '';
+    const category = $('skillCategory') ? $('skillCategory').value : '';
+    const data = await api('/skills?q=' + encodeURIComponent(query) + '&category=' + encodeURIComponent(category) + '&limit=600');
+    state.skills = data.skills || [];
+    state.skillMeta = data.stats || {};
+    renderSkills();
+    const stats = data.stats || {};
+    $('skillCountTag').textContent = num(stats.total) + ' SKILLS';
+    $('skillEnabledTag').textContent = num(stats.enabled) + ' ENABLED';
+    $('skillSeedTag').textContent = stats.seed_version ? 'SEED ' + String(stats.seed_version).slice(0, 22) : 'SEED LOCAL';
+    const select = $('skillCategory');
+    if (select && select.options.length <= 1) {
+      (stats.categories || []).forEach((c) => {
+        const opt = document.createElement('option');
+        opt.value = c.category;
+        opt.textContent = c.category + ' (' + c.n + ')';
+        select.appendChild(opt);
+      });
+    }
+    const bundles = data.bundles || [];
+    $('skillBundles').innerHTML = bundles.slice(0, 14).map((b) => '<span class="chip">' + esc(b) + '</span>').join('') || '<span class="chip">no bundles</span>';
+  } catch (e) { toast(e.message, 'error'); }
+}
+async function loadSkillImports() {
+  try {
+    const rows = await api('/skills/imports');
+    $('skillImports').innerHTML = rows.map((r) => (
+      '<div class="event"><i></i><div><b>' + esc(r.source) + '</b><small>' + esc(String(r.status || '').toUpperCase()) +
+      ' · ' + num(r.imported) + ' imported · ' + num(r.skipped) + ' skipped · ' + when(r.created_at) + '</small>' +
+      (r.detail ? '<small>' + esc(clip(r.detail, 220)) + '</small>' : '') + '</div></div>'
+    )).join('') || '<div class="empty">No imports yet.</div>';
+  } catch (e) { toast(e.message, 'error'); }
+}
+async function importSkills() {
+  const button = $('skillImportBtn');
+  button.disabled = true; button.textContent = '⟳ Importing…';
+  $('skillProgress').classList.remove('hidden');
+  $('skillProgress').textContent = 'Requesting import…';
+  try {
+    const result = await api('/skills/import', {
+      method: 'POST',
+      body: JSON.stringify({
+        source: $('skillSource').value.trim() || null,
+        branch: $('skillBranch').value.trim() || null,
+        token: $('skillToken').value.trim() || null
+      })
+    });
+    $('skillToken').value = '';
+    $('skillProgress').textContent = 'Import #' + result.id + ' queued. Downloading and parsing SKILL.md files…';
+    let ticks = 0;
+    const timer = setInterval(async () => {
+      ticks += 1;
+      try {
+        const rows = await api('/skills/imports');
+        const row = rows.find((r) => r.id === result.id);
+        $('skillImports').innerHTML = rows.map((r) => (
+          '<div class="event"><i></i><div><b>' + esc(r.source) + '</b><small>' + esc(String(r.status || '').toUpperCase()) +
+          ' · ' + num(r.imported) + ' imported · ' + num(r.skipped) + ' skipped</small></div></div>'
+        )).join('') || '<div class="empty">No imports yet.</div>';
+        if (row) {
+          $('skillProgress').textContent = 'Import #' + row.id + ' · ' + String(row.status || '').toUpperCase() +
+            ' · ' + num(row.imported) + ' imported · ' + num(row.skipped) + ' skipped' +
+            (row.detail ? '\n' + row.detail : '');
+          if (['ready', 'failed'].includes(row.status)) {
+            clearInterval(timer);
+            button.disabled = false; button.textContent = '✦ Import skills';
+            toast(row.status === 'ready' ? 'Skills imported: ' + row.imported + '.' : 'Skill import failed.', row.status === 'ready' ? '' : 'error');
+            loadSkills();
+          }
+        }
+        if (ticks > 240) { clearInterval(timer); button.disabled = false; button.textContent = '✦ Import skills'; }
+      } catch { }
+    }, 1800);
+  } catch (e) {
+    toast(e.message, 'error');
+    button.disabled = false; button.textContent = '✦ Import skills';
+    $('skillProgress').textContent = 'ERROR · ' + e.message;
+  }
+}
+async function seedSkills() {
+  try {
+    const r = await api('/skills/seed', { method: 'POST', body: '{}' });
+    toast(r.seeded ? 'Seeded ' + r.seeded + ' offline skills.' : 'Offline skills already up to date.');
+    loadSkills();
+  } catch (e) { toast(e.message, 'error'); }
+}
+async function openSkill(skillId) {
+  try {
+    const skill = await api('/skills/' + encodeURIComponent(skillId));
+    state.currentSkill = skill;
+    $('skillDetail').classList.remove('hidden');
+    $('skillDetailTitle').textContent = skill.name;
+    $('skillDetailMeta').textContent = (skill.category || 'general').toUpperCase() + ' · ' + (skill.enabled ? 'ENABLED' : 'DISABLED') +
+      (skill.bundles && skill.bundles.length ? ' · ' + skill.bundles.join(', ') : '');
+    $('skillDetailBody').innerHTML = md('**' + (skill.description || '') + '**\n\n' + (skill.content || 'No body stored.'));
+    $('skillDetail').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  } catch (e) { toast(e.message, 'error'); }
+}
+async function toggleCurrentSkill() {
+  if (!state.currentSkill) return;
+  try {
+    const r = await api('/skills/' + encodeURIComponent(state.currentSkill.skill_id) + '/toggle', { method: 'POST', body: '{}' });
+    toast('Skill ' + (r.enabled ? 'enabled' : 'disabled') + '.');
+    await loadSkills();
+    openSkill(state.currentSkill.skill_id);
+  } catch (e) { toast(e.message, 'error'); }
+}
+async function deleteCurrentSkill() {
+  if (!state.currentSkill) return;
+  if (!confirm('Delete skill "' + state.currentSkill.name + '" from the vault?')) return;
+  try {
+    await api('/skills/' + encodeURIComponent(state.currentSkill.skill_id), { method: 'DELETE' });
+    state.currentSkill = null;
+    $('skillDetail').classList.add('hidden');
+    toast('Skill deleted.');
+    loadSkills();
   } catch (e) { toast(e.message, 'error'); }
 }
 
@@ -675,10 +959,20 @@ async function globalSearch() {
     const memories = (r.memories || []).map((m) => (
       '<article class="knowledge-card"><h4>' + esc(m.kind) + '</h4><p>' + esc(clip(m.content, 500)) + '</p></article>'
     )).join('');
+    const web = (r.web || []).map((w) => (
+      '<article class="knowledge-card"><h4>' + esc(w.source_title || w.title || w.url) + '</h4>' +
+      '<div class="knowledge-meta">WEB · CHUNK ' + (w.ordinal + 1) + ' · SCORE ' + w.score + '</div>' +
+      '<p>' + esc(clip(w.content, 700)) + '</p></article>'
+    )).join('');
+    const skills = (r.skills || []).map((s) => (
+      '<article class="knowledge-card"><h4>✦ ' + esc(s.name) + '</h4>' +
+      '<div class="knowledge-meta">SKILL · ' + esc(s.category || 'general') + ' · SCORE ' + s.score + '</div>' +
+      '<p>' + esc(clip(s.description, 500)) + '</p></article>'
+    )).join('');
     $('searchResults').classList.remove('hidden');
     $('searchResults').innerHTML = '<div class="panel" style="margin-bottom:12px"><div class="panelhead"><div><label>HYBRID SEARCH</label><h3>' +
       esc(query) + '</h3></div><button class="textbtn" onclick="document.getElementById(\'searchResults\').classList.add(\'hidden\')">Close ✕</button></div>' +
-      '<div class="knowledge-list">' + ((r.knowledge || []).map(knowledgeCard).join('') + chunks + memories || '<div class="empty">No matches.</div>') + '</div></div>';
+      '<div class="knowledge-list">' + ((r.knowledge || []).map(knowledgeCard).join('') + chunks + web + skills + memories || '<div class="empty">No matches.</div>') + '</div></div>';
   } catch (e) { toast(e.message, 'error'); }
 }
 
@@ -979,14 +1273,21 @@ const SETTING_MAP = {
   sInterval: 'research_interval_seconds', sVerify: 'verification_sources',
   sAutoResume: 'auto_resume', sDomains: 'allowed_domains', sRepoFiles: 'max_repo_files',
   sRepoKb: 'max_repo_file_kb', sRepoMb: 'max_repo_mb', sChunkLines: 'repo_chunk_lines',
-  sChunkOverlap: 'repo_chunk_overlap'
+  sChunkOverlap: 'repo_chunk_overlap', sLearnDepth: 'learn_depth', sLearnLinks: 'learn_max_links',
+  sWebChars: 'web_chunk_chars', sWebOverlap: 'web_chunk_overlap', sWebPages: 'max_web_pages',
+  sSkillContext: 'skills_auto_context', sSkillsRepo: 'skills_repo'
 };
 async function loadSettings() {
   try {
     const s = await api('/settings');
     Object.entries(SETTING_MAP).forEach(([id, key]) => {
       const el = $(id);
-      if (el) el.value = s[key] != null ? s[key] : '';
+      if (!el) return;
+      if (key === 'auto_resume' || key === 'skills_auto_context') {
+        el.value = String(s[key]).toLowerCase() === 'true' ? 'true' : 'false';
+      } else {
+        el.value = s[key] != null ? s[key] : '';
+      }
     });
     $('cfgLlamaPath').value = s.llamacpp_model_path || '';
     $('cfgLlamaCtx').value = s.llamacpp_n_ctx || 4096;
@@ -1000,12 +1301,14 @@ async function saveSettings() {
   try {
     const numeric = new Set(['num_ctx', 'num_predict', 'num_thread', 'chat_history', 'max_pages_per_task',
       'deep_research_pages', 'request_delay_seconds', 'research_interval_seconds', 'verification_sources',
-      'max_repo_files', 'max_repo_file_kb', 'max_repo_mb', 'repo_chunk_lines', 'repo_chunk_overlap']);
+      'max_repo_files', 'max_repo_file_kb', 'max_repo_mb', 'repo_chunk_lines', 'repo_chunk_overlap',
+      'learn_depth', 'learn_max_links', 'web_chunk_chars', 'web_chunk_overlap', 'max_web_pages']);
     const payload = {};
     Object.entries(SETTING_MAP).forEach(([id, key]) => {
       const el = $(id);
       if (!el) return;
       if (key === 'auto_resume') payload[key] = el.value === 'true';
+      else if (key === 'skills_auto_context') payload[key] = el.value === 'true';
       else if (numeric.has(key)) payload[key] = Number(el.value);
       else payload[key] = el.value;
     });
@@ -1095,6 +1398,24 @@ function init() {
     const file = event.target.closest('.tree-node.file');
     if (file) loadRepoFile(file.dataset.path);
   });
+  if ($('webList')) {
+    $('webList').addEventListener('click', (event) => {
+      const card = event.target.closest('[data-web]');
+      if (card) selectWebSource(Number(card.dataset.web));
+    });
+  }
+  if ($('webPacks')) {
+    $('webPacks').addEventListener('click', (event) => {
+      const pack = event.target.closest('[data-pack]');
+      if (pack) learnPack(pack.dataset.pack);
+    });
+  }
+  if ($('skillList')) {
+    $('skillList').addEventListener('click', (event) => {
+      const card = event.target.closest('[data-skill]');
+      if (card) openSkill(card.dataset.skill);
+    });
+  }
   $$('#repoTabs .tab').forEach((tab) => tab.addEventListener('click', () => {
     $$('#repoTabs .tab').forEach((t) => t.classList.toggle('active', t === tab));
     $$('[id^="rtab-"]').forEach((panel) => panel.classList.toggle('active', panel.id === 'rtab-' + tab.dataset.rtab));
@@ -1128,7 +1449,7 @@ function init() {
 
   $('footerTime').textContent = new Date().toLocaleDateString();
   const sideVersion = $('sideVersion');
-  if (sideVersion) sideVersion.textContent = 'v0.4.0';
+  if (sideVersion) sideVersion.textContent = 'v0.5.0';
 
   refresh().then(() => {
     loadConversations();
