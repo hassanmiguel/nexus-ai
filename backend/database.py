@@ -35,6 +35,8 @@ CREATE TABLE IF NOT EXISTS web_sources(id INTEGER PRIMARY KEY AUTOINCREMENT,url 
 CREATE TABLE IF NOT EXISTS web_chunks(id INTEGER PRIMARY KEY AUTOINCREMENT,source_id INTEGER NOT NULL,url TEXT,title TEXT,ordinal INTEGER DEFAULT 0,content TEXT NOT NULL,embedding TEXT,embedding_kind TEXT,created_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS skills(id INTEGER PRIMARY KEY AUTOINCREMENT,skill_id TEXT UNIQUE NOT NULL,name TEXT NOT NULL,description TEXT DEFAULT '',category TEXT DEFAULT 'general',tags TEXT DEFAULT '',triggers TEXT DEFAULT '',bundles TEXT DEFAULT '',content TEXT DEFAULT '',source TEXT DEFAULT '',source_path TEXT DEFAULT '',enabled INTEGER DEFAULT 1,created_at TEXT NOT NULL,updated_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS skill_imports(id INTEGER PRIMARY KEY AUTOINCREMENT,source TEXT NOT NULL,status TEXT DEFAULT 'queued',imported INTEGER DEFAULT 0,skipped INTEGER DEFAULT 0,detail TEXT DEFAULT '',created_at TEXT NOT NULL,updated_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS learning_sessions(id INTEGER PRIMARY KEY AUTOINCREMENT,topic TEXT NOT NULL,mode TEXT DEFAULT 'topic',status TEXT DEFAULT 'running',started_at TEXT NOT NULL,updated_at TEXT NOT NULL,finished_at TEXT,pages_visited INTEGER DEFAULT 0,pages_learned INTEGER DEFAULT 0,knowledge_added INTEGER DEFAULT 0,errors INTEGER DEFAULT 0,detail TEXT DEFAULT '');
+CREATE TABLE IF NOT EXISTS learning_topics(id INTEGER PRIMARY KEY AUTOINCREMENT,topic TEXT UNIQUE NOT NULL,status TEXT DEFAULT 'pending',priority INTEGER DEFAULT 5,source TEXT DEFAULT 'curated',created_at TEXT NOT NULL,updated_at TEXT NOT NULL,last_learned_at TEXT,attempts INTEGER DEFAULT 0,detail TEXT DEFAULT '');
 '''
 
 INDEXES = '''
@@ -51,6 +53,8 @@ CREATE INDEX IF NOT EXISTS idx_web_sources_root ON web_sources(root_id);
 CREATE INDEX IF NOT EXISTS idx_web_chunks_source ON web_chunks(source_id);
 CREATE INDEX IF NOT EXISTS idx_skills_category ON skills(category);
 CREATE INDEX IF NOT EXISTS idx_skills_enabled ON skills(enabled);
+CREATE INDEX IF NOT EXISTS idx_learning_sessions_status ON learning_sessions(status);
+CREATE INDEX IF NOT EXISTS idx_learning_topics_status ON learning_topics(status);
 '''
 
 # Every value used by the UI/backend. Keeping them in one place makes upgrades safe.
@@ -93,6 +97,15 @@ DEFAULTS = {
     'web_chunk_chars': '1200',
     'web_chunk_overlap': '180',
     'max_web_pages': '40',
+    # autonomous learning -------------------------------------------------------
+    'learning_enabled': 'false',
+    'learning_resume': 'true',
+    'learning_speed': 'normal',
+    'learning_pages_per_session': '5',
+    'learning_topics': '',
+    'learning_random': 'true',
+    'learning_session_interval_seconds': '120',
+    'learning_auto_verify': 'true',
     # skills (antigravity vault) ------------------------------------------------
     'skills_auto_context': 'true',
     'skills_seed_version': '',
@@ -116,12 +129,13 @@ def init_db():
         # Migrate databases created by earlier NEXUS builds.
         for table, columns in {
             'knowledge': [('embedding', 'TEXT'), ('verification_status', "TEXT DEFAULT 'unverified'"),
-                          ('source_domain', 'TEXT'), ('embedding_kind', 'TEXT')],
+                          ('source_domain', 'TEXT'), ('embedding_kind', 'TEXT'), ('session_id', 'INTEGER')],
             'tasks': [('priority', 'INTEGER DEFAULT 5'), ('parent_id', 'INTEGER'),
                       ('mode', "TEXT DEFAULT 'assisted'"), ('attempts', 'INTEGER DEFAULT 0')],
             'memories': [('embedding_kind', 'TEXT')],
             'web_sources': [('root_id', 'INTEGER'), ('depth', 'INTEGER DEFAULT 0'), ('summary', "TEXT DEFAULT ''"),
-                            ('char_count', 'INTEGER DEFAULT 0'), ('chunk_count', 'INTEGER DEFAULT 0')],
+                            ('char_count', 'INTEGER DEFAULT 0'), ('chunk_count', 'INTEGER DEFAULT 0'),
+                            ('session_id', 'INTEGER')],
             'skills': [('bundles', "TEXT DEFAULT ''"), ('enabled', 'INTEGER DEFAULT 1'), ('triggers', "TEXT DEFAULT ''")],
         }.items():
             existing = {r['name'] for r in db.execute(f'PRAGMA table_info({table})')}

@@ -32,15 +32,18 @@ if errorlevel 1 (
   echo Install Ollama later from https://ollama.com/download for generative chat.
   echo.
 ) else (
-  echo Ollama found. Starting the daemon...
-  start "NEXUS Ollama" cmd /c "ollama serve"
-  timeout /t 3 >nul
+  python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:11434/api/tags', timeout=1)" >nul 2>nul
+  if errorlevel 1 (
+    echo Starting Ollama daemon...
+    start "NEXUS Ollama" cmd /c "ollama serve"
+    timeout /t 3 >nul
+  ) else (
+    echo Ollama daemon is already running.
+  )
   ollama list
-  echo.
-  echo If this is your first run, install models with install_model.bat
   echo.
 )
 echo Starting NEXUS AI at http://127.0.0.1:8000
 start "" http://127.0.0.1:8000
-python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
+python run_nexus.py --host 127.0.0.1 --port 8000
 pause

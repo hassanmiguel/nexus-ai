@@ -35,6 +35,11 @@ def allowed_domain(url):
     allow=_allow_entries()
     return not allow or any(host==d or host.endswith('.'+d) for d in allow)
 
+
+def allowlist():
+    """Public accessor for the configured domain allowlist (empty = all public HTTPS)."""
+    return _allow_entries()
+
 async def safe_get(client,url,max_redirects=5):
     current=url
     for _ in range(max_redirects+1):

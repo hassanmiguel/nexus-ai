@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>NEXUS AI // Local Intelligence Core</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230b1020'/%3E%3Cpath d='M18 46V18h6l16 19V18h6v28h-6L24 27v19z' fill='%235eead4'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -26,21 +27,24 @@
     <div class="navlabel">// WORKSPACE</div>
     <nav id="nav">
       <button class="nav active" data-page="overview"><i>◈</i><span>Overview</span><b>01</b></button>
-      <button class="nav" data-page="repos"><i>⌥</i><span>Repo Lab</span><b>02</b></button>
-      <button class="nav" data-page="urllearn"><i>⇲</i><span>URL Learn</span><b>03</b></button>
-      <button class="nav" data-page="skills"><i>✦</i><span>Skills</span><b>04</b></button>
-      <button class="nav" data-page="chat"><i>▸</i><span>AI Chat</span><b>05</b></button>
-      <button class="nav" data-page="learning"><i>⌁</i><span>Auto Research</span><b>06</b></button>
-      <button class="nav" data-page="knowledge"><i>▤</i><span>Knowledge</span><b>07</b></button>
+      <button class="nav" data-page="chat"><i>▸</i><span>Nexus Core</span><b>02</b></button>
+      <button class="nav" data-page="autonomous"><i>◉</i><span>Autonomous Learning</span><b>03</b></button>
+      <button class="nav" data-page="urllearn"><i>⇲</i><span>URL Learn</span><b>04</b></button>
+      <button class="nav" data-page="repos"><i>⌥</i><span>Repo Lab</span><b>05</b></button>
+      <button class="nav" data-page="graph"><i>⌘</i><span>Knowledge Graph</span><b>06</b></button>
+      <button class="nav" data-page="history"><i>▦</i><span>Learning History</span><b>07</b></button>
       <button class="nav" data-page="memory"><i>◌</i><span>Memory</span><b>08</b></button>
-      <button class="nav" data-page="graph"><i>⌘</i><span>Graph</span><b>09</b></button>
-      <button class="nav" data-page="tasks"><i>☷</i><span>Tasks</span><b>10</b></button>
-      <button class="nav" data-page="activity"><i>⌗</i><span>Activity</span><b>11</b></button>
-      <button class="nav" data-page="experiments"><i>⚗</i><span>Experiments</span><b>12</b></button>
-      <button class="nav" data-page="analytics"><i>▥</i><span>Analytics</span><b>13</b></button>
-      <button class="nav" data-page="models"><i>⬡</i><span>Providers</span><b>14</b></button>
-      <button class="nav" data-page="permissions"><i>⌂</i><span>Permissions</span><b>15</b></button>
-      <button class="nav" data-page="settings"><i>⚙</i><span>Settings</span><b>16</b></button>
+      <button class="nav" data-page="knowledge"><i>▤</i><span>Knowledge</span><b>09</b></button>
+      <button class="nav" data-page="skills"><i>✦</i><span>Skills</span><b>10</b></button>
+      <button class="nav" data-page="learning"><i>⌁</i><span>Auto Research</span><b>11</b></button>
+      <button class="nav" data-page="tasks"><i>☷</i><span>Tasks</span><b>12</b></button>
+      <button class="nav" data-page="activity"><i>⌗</i><span>Activity</span><b>13</b></button>
+      <button class="nav" data-page="monitor"><i>◫</i><span>System Monitor</span><b>14</b></button>
+      <button class="nav" data-page="experiments"><i>⚗</i><span>Experiments</span><b>15</b></button>
+      <button class="nav" data-page="analytics"><i>▥</i><span>Analytics</span><b>16</b></button>
+      <button class="nav" data-page="models"><i>⬡</i><span>Providers</span><b>17</b></button>
+      <button class="nav" data-page="permissions"><i>⌂</i><span>Permissions</span><b>18</b></button>
+      <button class="nav" data-page="settings"><i>⚙</i><span>Settings</span><b>19</b></button>
     </nav>
 
     <div class="sidebar-bottom">
@@ -77,15 +81,15 @@
         <div class="hero-copy">
           <div class="eyebrow cyan">AUTONOMOUS CORE // <span id="heroProvider">NEXUS CORE</span></div>
           <h2>Build. Learn.<br><em>Remember.</em></h2>
-          <p>Teach NEXUS a GitHub repository, let the research agent crawl, verify and store knowledge, or flip on a local generative engine. Everything lives on your machine.</p>
+          <p>Teach NEXUS a GitHub repository, let it discover and learn public web pages on its own, or flip on a local generative engine. Everything lives on your machine.</p>
           <div class="hero-actions">
             <button class="primary" onclick="agentAction('start')">▶ Start Agent</button>
-            <button class="secondary" onclick="showPage('repos')">Learn a Repo <span>↗</span></button>
-            <button class="ghost" onclick="showPage('chat')">Open Chat <span>→</span></button>
+            <button class="secondary" onclick="showPage('autonomous')">Autonomous Learning <span>↗</span></button>
+            <button class="ghost" onclick="showPage('chat')">Open Nexus Core <span>→</span></button>
           </div>
           <div class="hero-tags">
             <span class="tag">NO API KEYS</span>
-            <span class="tag">REPO INDEXING</span>
+            <span class="tag">AUTONOMOUS DISCOVERY</span>
             <span class="tag">PERMISSION GATED</span>
           </div>
         </div>
@@ -314,7 +318,7 @@
     <!-- CHAT -->
     <section id="chat" class="page">
       <div class="sectionintro">
-        <div><div class="eyebrow cyan">LOCAL INFERENCE</div><h2>AI Chat</h2><p id="chatSubtitle">NEXUS Core answers from what it learned — no Ollama required. Switch engines in the top bar.</p></div>
+        <div><div class="eyebrow cyan">LOCAL INFERENCE</div><h2>Nexus Core</h2><p id="chatSubtitle">NEXUS Core answers from what it learned — no Ollama required. Switch engines in the top bar.</p></div>
         <div class="row-actions"><span class="tag" id="chatProviderTag">NEXUS CORE</span><span class="tag" id="chatMemoryTag">MEMORY</span></div>
       </div>
       <div class="chat-layout">
@@ -344,6 +348,60 @@
             <span id="chatRepoBadge" class="tag hidden">REPO CONTEXT</span>
             <button class="textbtn" onclick="toggleRepoContext()">Pin repo context</button>
           </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- AUTONOMOUS LEARNING -->
+    <section id="autonomous" class="page">
+      <div class="sectionintro">
+        <div><div class="eyebrow cyan">INDEPENDENT DISCOVERY</div><h2>Autonomous Learning</h2><p>NEXUS selects a topic, discovers public pages inside your allowlist, learns them through the robots.txt-gated pipeline, verifies source diversity, and stores knowledge. Every counter below comes from the database.</p></div>
+        <span class="tag" id="autoStateTag">IDLE</span>
+      </div>
+      <div class="auto-hero panel">
+        <div class="auto-core" id="autoCore">
+          <div class="auto-orbit"><i></i></div>
+          <div class="auto-orbit o2"><i></i></div>
+          <div class="auto-orbit o3"><i></i></div>
+          <div class="auto-nucleus" id="autoNucleus">N</div>
+          <div class="auto-phase" id="autoPhase">IDLE</div>
+        </div>
+        <div class="auto-status">
+          <label>ACTIVE SESSION</label>
+          <h3 id="autoTopic">No learning session</h3>
+          <p id="autoUrl" class="muted mono">Waiting for start…</p>
+          <div class="auto-controls">
+            <button class="primary" onclick="autonomousAction('start')">▶ Start Learning</button>
+            <button onclick="autonomousAction('pause')">Ⅱ Pause</button>
+            <button onclick="autonomousAction('resume')">▶ Resume</button>
+            <button class="danger" onclick="autonomousAction('stop')">■ Stop</button>
+            <button onclick="autonomousAction('random')">✦ Random Exploration</button>
+          </div>
+          <div class="auto-config">
+            <div><label>LEARNING SPEED</label><select id="autoSpeed" onchange="saveAutoSettings()"><option value="slow">Slow · 8s between pages</option><option value="normal">Normal · 3s between pages</option><option value="fast">Fast · 1s between pages</option></select></div>
+            <div><label>PAGES PER SESSION</label><input id="autoPages" type="number" min="1" max="20" onchange="saveAutoSettings()"></div>
+            <div><label>START A SPECIFIC TOPIC</label><input id="autoTopicInput" placeholder="Optional — leave blank to choose automatically"></div>
+          </div>
+          <p class="muted smallgap" id="autoAllowlist">Allowlist: all public HTTPS destinations</p>
+        </div>
+      </div>
+      <div class="metrics auto-metrics">
+        <div class="metric"><label>KNOWLEDGE ACQUIRED</label><strong id="autoKnowledge">—</strong><small>stored records</small></div>
+        <div class="metric"><label>SOURCES DISCOVERED</label><strong id="autoSources">—</strong><small>web sources seen</small></div>
+        <div class="metric"><label>PAGES ANALYZED</label><strong id="autoPagesDone">—</strong><small>successful fetches</small></div>
+        <div class="metric"><label>SESSIONS COMPLETED</label><strong id="autoSessions">—</strong><small id="autoSuccess">0% success</small></div>
+        <div class="metric"><label>TOPICS EXPLORED</label><strong id="autoTopics">—</strong><small>distinct topics</small></div>
+        <div class="metric"><label>FAILURES</label><strong id="autoFailures">—</strong><small>skipped / failed</small></div>
+      </div>
+      <div class="grid2">
+        <div class="panel">
+          <div class="panelhead"><div><label>TOPIC QUEUE</label><h3>Learning priorities</h3></div><button class="textbtn" onclick="discoverTopics()">Auto-discover topic ✦</button></div>
+          <div class="chatinput"><input id="autoTopicAdd" placeholder="Add a topic of interest…"><button class="secondary" onclick="addAutoTopic()">Add</button></div>
+          <div id="autoTopicList" class="topic-list"></div>
+        </div>
+        <div class="panel">
+          <div class="panelhead"><div><label>SESSION HISTORY</label><h3>Recent autonomous sessions</h3></div><button class="textbtn" onclick="loadAutonomous()">Refresh ↻</button></div>
+          <div id="autoSessionList" class="eventlist"></div>
         </div>
       </div>
     </section>
@@ -398,10 +456,58 @@
     <!-- GRAPH -->
     <section id="graph" class="page">
       <div class="sectionintro">
-        <div><div class="eyebrow cyan">CONNECTED KNOWLEDGE</div><h2>Knowledge Graph</h2><p>Topic clusters and evidence relationships derived from stored records.</p></div>
+        <div><div class="eyebrow cyan">CONNECTED KNOWLEDGE</div><h2>Knowledge Graph</h2><p>Nodes are real stored records, topics, source domains and title concepts. Drag to pan, scroll to zoom, click a node to inspect its evidence.</p></div>
+        <span class="tag" id="graphNodeTag">0 NODES</span>
       </div>
-      <div class="panel"><div id="graphBars" class="graph-bars"></div></div>
-      <div class="panel"><div id="graphList" class="knowledge-list"></div></div>
+      <div class="graph-toolbar panel">
+        <div class="searchrow">
+          <input id="graphSearch" placeholder="Filter nodes by label…" oninput="filterGraph()">
+          <select id="graphTopic" onchange="loadGraph()"><option value="">All topics</option></select>
+          <select id="graphVerification" onchange="loadGraph()">
+            <option value="">All verification</option>
+            <option value="corroborated">Corroborated</option>
+            <option value="single-source">Single source</option>
+            <option value="web-learned">Web learned</option>
+            <option value="user-reported">User reported</option>
+            <option value="unverified">Unverified</option>
+          </select>
+          <button class="secondary" onclick="resetGraphView()">Reset view</button>
+          <button class="secondary" onclick="loadGraph()">Refresh ↻</button>
+        </div>
+        <div id="graphLegend" class="graph-legend"></div>
+      </div>
+      <div class="graph-wrap panel">
+        <canvas id="graphCanvas"></canvas>
+        <div class="graph-hud" id="graphHud">Drag to pan · scroll to zoom · click a node</div>
+        <aside class="graph-inspector hidden" id="graphInspector"></aside>
+      </div>
+      <div class="grid2">
+        <div class="panel"><div class="panelhead"><div><label>GRAPH STATS</label><h3>Structure</h3></div></div><div id="graphStats" class="graph-stats"></div></div>
+        <div class="panel"><div class="panelhead"><div><label>TOPICS</label><h3>Stored concepts</h3></div></div><div id="graphBars" class="graph-bars"></div></div>
+      </div>
+    </section>
+
+    <!-- LEARNING HISTORY -->
+    <section id="history" class="page">
+      <div class="sectionintro">
+        <div><div class="eyebrow cyan">LEARNING RECORDS</div><h2>Learning History</h2><p>Every row below is a real record from the local knowledge database: topic, source, extracted summary, verification label and learning status.</p></div>
+        <span class="tag" id="historyCount">0 RECORDS</span>
+      </div>
+      <div class="panel">
+        <div class="searchrow history-filters">
+          <input id="historySearch" placeholder="Search topic, summary or source…" oninput="debouncedHistory()">
+          <select id="historyTopic" onchange="loadHistory()"><option value="">All topics</option></select>
+          <select id="historyVerification" onchange="loadHistory()"><option value="">All verification</option></select>
+          <select id="historyStatus" onchange="loadHistory()">
+            <option value="">All statuses</option>
+            <option value="learned">Web learned</option>
+            <option value="user">User reported</option>
+            <option value="local">Local / research</option>
+          </select>
+          <button class="secondary" onclick="loadHistory()">Refresh ↻</button>
+        </div>
+        <div id="historyList" class="knowledge-list"></div>
+      </div>
     </section>
 
     <!-- TASKS -->
@@ -422,6 +528,30 @@
         <span class="tag" id="eventCountTag">LIVE</span>
       </div>
       <div class="panel"><div id="allEvents" class="eventlist"></div></div>
+    </section>
+
+    <!-- SYSTEM MONITOR -->
+    <section id="monitor" class="page">
+      <div class="sectionintro">
+        <div><div class="eyebrow cyan">RUNTIME HEALTH</div><h2>System Monitor</h2><p>Backend reachability, active engine, hardware, permissions, storage counts and recent warnings — read from the live status endpoints.</p></div>
+        <span class="tag" id="monitorState">LIVE</span>
+      </div>
+      <div class="metrics">
+        <div class="metric"><label>BACKEND</label><strong id="monBackend">—</strong><small>API reachability</small></div>
+        <div class="metric"><label>ENGINE</label><strong id="monEngine">—</strong><small id="monEngineSub">provider</small></div>
+        <div class="metric"><label>KNOWLEDGE</label><strong id="monKnowledge">—</strong><small>stored records</small></div>
+        <div class="metric"><label>WEB CHUNKS</label><strong id="monChunks">—</strong><small>indexed evidence</small></div>
+        <div class="metric"><label>EVENTS</label><strong id="monEvents">—</strong><small>audit entries</small></div>
+        <div class="metric"><label>PERMISSIONS</label><strong id="monPerms">—</strong><small>enabled gates</small></div>
+      </div>
+      <div class="grid2">
+        <div class="panel"><label>HARDWARE</label><h3 id="monHwTitle">—</h3><p id="monHwText" class="muted"></p><div id="monHwGrid" class="monitor-grid"></div></div>
+        <div class="panel"><label>PROVIDER</label><h3 id="monProvider">—</h3><p id="monProviderText" class="muted"></p><div id="monProviderMeta" class="monitor-grid"></div></div>
+      </div>
+      <div class="grid2">
+        <div class="panel"><div class="panelhead"><div><label>RECENT ERRORS</label><h3>Warnings & failures</h3></div></div><div id="monErrors" class="eventlist"></div></div>
+        <div class="panel"><div class="panelhead"><div><label>RECENT ACTIVITY</label><h3>Event stream</h3></div><button class="textbtn" onclick="showPage('activity')">All events ↗</button></div><div id="monEventsList" class="eventlist"></div></div>
+      </div>
     </section>
 
     <!-- EXPERIMENTS -->
@@ -594,6 +724,26 @@
             </div>
             <label>SKILLS REPOSITORY</label><input id="sSkillsRepo" placeholder="https://github.com/rmyndharis/antigravity-skills">
             <p class="muted">URL learning and skill imports need the Internet permission. Imported text is treated as reference guidance only.</p>
+          </div>
+        </div>
+        <div class="panel">
+          <label>AUTONOMOUS LEARNING</label><h3>Discovery behaviour</h3>
+          <div class="form-grid">
+            <div class="two-col">
+              <div><label>SPEED</label><select id="sLearningSpeed"><option value="slow">Slow — 8s between pages</option><option value="normal">Normal — 3s between pages</option><option value="fast">Fast — 1s between pages</option></select></div>
+              <div><label>PAGES PER SESSION</label><input id="sLearningPages" type="number" min="1" max="20"></div>
+            </div>
+            <div class="two-col">
+              <div><label>SESSION INTERVAL (S)</label><input id="sLearningInterval" type="number" min="30" max="3600"></div>
+              <div><label>RANDOM EXPLORATION</label><select id="sLearningRandom"><option value="true">Enabled</option><option value="false">Disabled</option></select></div>
+            </div>
+            <div class="two-col">
+              <div><label>AUTO-VERIFY SOURCES</label><select id="sLearningVerify"><option value="true">Enabled</option><option value="false">Disabled</option></select></div>
+              <div><label>RESUME AFTER RESTART</label><select id="sLearningResume"><option value="true">Enabled</option><option value="false">Disabled</option></select></div>
+            </div>
+            <label>TOPICS OF INTEREST (COMMA-SEPARATED)</label><input id="sLearningTopics" placeholder="python, astronomy, cryptography">
+            <button class="primary" onclick="saveSettings()">Save configuration</button>
+            <p class="muted">Autonomous learning needs the Internet permission. It respects robots.txt, rate limits and the domain allowlist; it never bypasses logins, paywalls or CAPTCHAs.</p>
           </div>
         </div>
       </div>

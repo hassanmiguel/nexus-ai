@@ -15,10 +15,11 @@ offline.
 """
 import json
 import re
+from datetime import datetime
 
 from .config import NEXUS_MODEL
-from .database import read_bool, setting
-from .memory import retrieve, retrieve_experiences
+from .database import connect, read_bool, setting
+from .memory import retrieve, retrieve_experiences, store_knowledge
 from .textutil import (best_sentences, clip, jaccard, keyword_set, language_from_path,
                        lexical_score, split_sentences, summarize_text)
 
@@ -29,13 +30,37 @@ CODE_HINTS = {
     'async', 'await', 'refactor', 'debug', 'types', 'interface', 'method', 'variable',
 }
 
-GREETINGS = re.compile(r'^(hi|hey|hello|yo|sup|howdy|hola|greetings|good (morning|afternoon|evening|night))\b', re.I)
+GREETINGS = re.compile(r'^(hi|hiya|hey|heya|hello|yo|sup|howdy|hola|greetings|morning|good (morning|afternoon|evening|night))\b', re.I)
 THANKS = re.compile(r'^(thanks|thank you|thx|cheers|nice|great|cool|awesome|perfect)\b', re.I)
-BYE = re.compile(r'^(bye|goodbye|see you|good night)\b', re.I)
+BYE = re.compile(r'^(bye|goodbye|see you|good night|goodnight|later)\b', re.I)
+HOW_ARE_YOU = re.compile(r"^(how are you|how's it going|how is it going|how do you feel|are you ok|you ok|what's up|whats up)\b", re.I)
+USER_NAME = re.compile(r'^(?:my name is|call me)\s+([A-Za-z][A-Za-z0-9 _\-]{1,40})[.!]?$', re.I)
+REMEMBER = re.compile(r'^(?:please\s+)?(?:remember|note|keep in mind)\s+(?:that\s+)?(.{4,600})$', re.I)
+PROFILE_QUERY = re.compile(r'\b(what do you (?:remember|know) about me|who am i|my profile)\b', re.I)
+NAME_QUERY = re.compile(r"\b(what(?:'s| is) my name|do you (?:know|remember) my name|what am i called)\b", re.I)
 IDENTITY = re.compile(r'\b(who are you|what are you|your name|which model|what model|nex0|nexus core)\b', re.I)
 CAPABILITIES = re.compile(r'\b(what can you do|capabilities|how do you work|help me|what do you know)\b', re.I)
 URL_LEARN = re.compile(r'\b(url learn|learn (?:a |this |the )?(?:url|page|website|article|link)|teach you (?:a )?(?:url|page|website))\b', re.I)
 SKILL_HINT = re.compile(r'\b(skill|skills|antigravity|playbook)\b', re.I)
+UNKNOWN = re.compile(r"\b(what (?:don'?t|do not) you know|something you (?:do not|don'?t) know|"
+                     r"what are your limits|what can'?t you do|what can you not do)\b", re.I)
+
+# Conversational words that appear in almost every stored page and therefore
+# must not by themselves make unrelated evidence look relevant.
+GENERIC_QUERY_WORDS = {
+    'know', 'think', 'tell', 'say', 'thing', 'something', 'anything', 'really',
+    'actually', 'please', 'want', 'need', 'like', 'help', 'explain', 'describe',
+    'answer', 'question', 'mean', 'means', 'give', 'find', 'show', 'look',
+}
+
+_GREETING_REPLIES = (
+    'Hello! How can I help?',
+    'Hey there! What are we working on?',
+    'Hi — good to see you.',
+    'Hello! Ask me anything, or teach me a page and I will remember it.',
+    'Hey! I am ready when you are.',
+)
+_greeting_index = 0
 
 
 def _permission_summary():
@@ -73,19 +98,93 @@ def capabilities_text():
     )
 
 
-def _greeting_text():
+def _user_profile():
+    try:
+        with connect() as db:
+            rows = db.execute(
+                "SELECT title,content FROM knowledge WHERE topic='user-profile' AND "
+                "verification_status='user-reported' ORDER BY id DESC LIMIT 20").fetchall()
+        return [dict(r) for r in rows]
+    except Exception:
+        return []
+
+
+def _user_name():
+    for row in _user_profile():
+        match = re.search(r'\bname is\s+([A-Za-z][A-Za-z0-9 _\-]{0,40})', row.get('content') or '', re.I)
+        if match:
+            return match.group(1).strip().title()
+    return ''
+
+
+async def _store_user_fact(text):
+    text = clip(re.sub(r'\s+', ' ', text or '').strip(), 600)
+    if len(text) < 3:
+        return False
+    title = clip(text, 120)
+    try:
+        with connect() as db:
+            exists = db.execute(
+                "SELECT id FROM knowledge WHERE verification_status='user-reported' AND lower(content)=lower(?) "
+                "LIMIT 1", (text,)).fetchone()
+        if exists:
+            return False
+        await store_knowledge(title, text, 'user:conversation', 'user-profile', 0.95, 'user-reported')
+        return True
+    except Exception:
+        return False
+
+
+def _greeting_text(question=''):
+    global _greeting_index
+    low = (question or '').lower()
+    hour = datetime.now().hour
+    if 'good morning' in low or (hour < 12 and re.match(r'^(morning)\b', low)):
+        reply = 'Good morning!'
+    elif 'good afternoon' in low or (12 <= hour < 18 and low.startswith('good afternoon')):
+        reply = 'Good afternoon!'
+    elif 'good evening' in low or (hour >= 18 and low.startswith('good evening')):
+        reply = 'Good evening!'
+    elif 'good night' in low:
+        reply = 'Good night!'
+    else:
+        reply = _GREETING_REPLIES[_greeting_index % len(_GREETING_REPLIES)]
+        _greeting_index += 1
+    name = _user_name()
+    if name and name.lower() not in reply.lower():
+        reply += f' {name}, what can I do for you?'
+    elif not reply.rstrip().endswith('?'):
+        reply += ' What can I do for you?'
+    return reply
+
+
+def _how_are_you_text():
+    return ('I am running locally and everything I need is on disk — no cloud dependency. '
+            'More importantly: how are you doing? If you want, I can help you learn something new '
+            'or look through what I already remember.')
+
+
+def _unknown_text():
     return (
-        f'**{NEXUS_MODEL} // online.** Good to see you.\n\n'
-        'I answer from what you teach me — repositories, public web pages, skills, and stored memory. '
-        'I can also help with programming, architecture, debugging, research and plain-language questions once the evidence is in memory.\n\n'
-        '**Quick starts**\n'
-        '- *What can you do?* — capability map\n'
-        '- **Repo Lab** — teach me a GitHub repository or local codebase\n'
-        '- **URL Learn** — teach me a page about greetings, programming, a library, or anything else\n'
-        '- **Skills** — browse the imported Antigravity skill vault\n'
-        '- **AI Chat** — ask about anything I have learned\n\n'
-        f'Permissions: `{_permission_summary()}` · Skills: `{_skill_summary()}`'
+        'There is a lot I do not know — and I will say so rather than invent an answer.\n\n'
+        'In NEXUS Core mode I only answer from evidence stored on this machine: learned web pages, '
+        'indexed repository code, knowledge records, the skill vault and user-reported facts. '
+        'I cannot reason from general world knowledge the way a hosted language model does, '
+        'I cannot verify facts I have not read, and I have no live view of the internet unless '
+        'a learning task fetches a page.\n\n'
+        'If you want a specific gap filled, teach me a URL in **URL Learn**, add a topic in '
+        '**Autonomous Learning**, or switch to a generative provider.'
     )
+
+
+def _profile_text():
+    profile = _user_profile()
+    if not profile:
+        return ('I do not have any user-reported facts stored yet. Tell me things like '
+                '“my name is Alex” or “remember that I prefer Python”, and I will keep them '
+                'in persistent memory and label them as user-reported rather than verified.')
+    lines = '\n'.join(f'- {clip(row.get("content"), 300)} *(user-reported)*' for row in profile[:12])
+    return ('Here is what you have told me — stored as **user-reported**, not independently verified:\n\n' + lines)
 
 
 def _identity_text():
@@ -143,6 +242,40 @@ async def _gather(question):
     except Exception:
         pass
     return knowledge, experiences, chunks, web_chunks, skills
+
+
+def _relevant(row, question, strong_score=0.30):
+    """Keep only evidence that plausibly answers the question.
+
+    Retrieval always returns *something* when the index is non-empty. Sharing a
+    single word with a long page is not evidence: the word may occur in an
+    unrelated paragraph. A record qualifies when the match is topical (several
+    query terms in its title/topic/path/url) or when a single-term / full-term
+    match is strong enough to clear the retrieval score floor. Questions with
+    several terms that only appear scattered through unrelated body text are
+    rejected so NEXUS can honestly say it does not know.
+    """
+    q = keyword_set(question) - GENERIC_QUERY_WORDS
+    if not q:
+        return False
+    meta = keyword_set(' '.join(str(row.get(key) or '') for key in
+                                ('title', 'source_title', 'topic', 'url', 'path')))
+    body = keyword_set(str(row.get('content') or '')[:6000])
+    meta_hits = q & meta
+    try:
+        score = float(row.get('score') or 0)
+    except (TypeError, ValueError):
+        score = 0.0
+    if meta_hits:
+        if len(meta_hits) >= 2:
+            return True
+        # One descriptive term in the metadata: accept when it is the only
+        # substantive term in the question, or when retrieval is confident.
+        return len(q) == 1 or score >= 0.18
+    if len(q) == 1:
+        return score >= 0.15
+    coverage = len(q & (meta | body)) / len(q)
+    return coverage >= 0.99 and score >= strong_score
 
 
 def _search_query(question, history):
@@ -234,32 +367,81 @@ def _confidence(knowledge, experiences, chunks, web_chunks, skills, extra_contex
     return 'low'
 
 
+def _pure_greeting(question):
+    text = re.sub(r'[^\w\s]', ' ', (question or '').lower())
+    text = re.sub(r'\b(nexus|ai|core|there)\b', ' ', text)
+    text = re.sub(r'\s+', ' ', text).strip()
+    return bool(GREETINGS.match(text)) and len(text.split()) <= 4
+
+
 async def answer(question, extra_context='', history=None):
     question = (question or '').strip()
     low = question.lower()
     if not question:
         return capabilities_text()
-    if GREETINGS.match(low) and len(question) <= 80:
-        return _greeting_text()
+    name_match = USER_NAME.match(question)
+    if name_match:
+        name = name_match.group(1).strip().title()
+        stored = await _store_user_fact(f"The user's name is {name}.")
+        return (f'Nice to meet you, {name}. ' +
+                ('I have stored that in persistent memory as a **user-reported** fact. '
+                 if stored else 'I already had that stored as a **user-reported** fact. ') +
+                'You can ask me “what do you remember about me?” at any time.')
+    remember_match = REMEMBER.match(question)
+    if remember_match:
+        fact = remember_match.group(1).strip().rstrip('.')
+        stored = await _store_user_fact(fact)
+        return ('Stored. I will treat that as a **user-reported** fact, not independently verified knowledge. '
+                if stored else 'I already had that exact fact stored as **user-reported**.')
+    if NAME_QUERY.search(low):
+        known_name = _user_name()
+        if known_name:
+            return (f'You told me your name is **{known_name}**. I keep that as a **user-reported** '
+                    'fact — you can correct it any time by saying “my name is …”.')
+        return ('I do not have your name stored yet. Tell me “my name is …” and I will remember it '
+                'as a user-reported fact.')
+    if PROFILE_QUERY.search(low):
+        return _profile_text()
+    if HOW_ARE_YOU.match(low) and len(question) <= 80:
+        return _how_are_you_text()
+    if _pure_greeting(question):
+        return _greeting_text(question)
     if THANKS.match(low) and len(question) <= 80:
-        return f'**{NEXUS_MODEL} // acknowledged.** Ask me anything else, or teach me a new URL or repository and I will remember it.'
+        return 'You are welcome. Ask me anything else, or teach me a new page or repository and I will remember it.'
     if BYE.match(low) and len(question) <= 80:
-        return f'**{NEXUS_MODEL} // standby.** Your knowledge, repositories, web pages and skills stay on disk until next time.'
+        return 'Goodbye for now. Your knowledge, repositories, web pages and skills stay on disk until next time.'
     if IDENTITY.search(low):
         return _identity_text()
     if CAPABILITIES.search(low):
         return capabilities_text()
     if URL_LEARN.search(low):
         return _url_learn_text()
+    if UNKNOWN.search(low):
+        return _unknown_text()
 
     query = _search_query(question, history)
     knowledge, experiences, chunks, web_chunks, skills = await _gather(query)
+    relevance_query = question if keyword_set(question) else query
+    knowledge = [row for row in knowledge if _relevant(row, relevance_query)]
+    experiences = [row for row in experiences if _relevant(row, relevance_query)]
+    chunks = [row for row in chunks if _relevant(row, relevance_query)]
+    web_chunks = [row for row in web_chunks if _relevant(row, relevance_query)]
+    skills = [row for row in skills if _relevant(row, relevance_query)]
     want_code = any(w in keyword_set(question) for w in CODE_HINTS) or bool(chunks)
     sections = []
+    profile = _user_profile()
 
     direct = _direct_answer(question, knowledge, web_chunks, chunks, skills)
     if direct:
-        sections.append(f'### Direct answer\n{direct}')
+        if web_chunks and not knowledge:
+            lead = 'From a public page I learned:'
+        elif knowledge and not web_chunks:
+            lead = 'Here is what my stored knowledge says:'
+        elif knowledge or web_chunks:
+            lead = 'Here is what I found in memory:'
+        else:
+            lead = 'Here is the closest match I have:'
+        sections.append(f'### Answer\n{lead} {direct}')
 
     if chunks:
         lead = (

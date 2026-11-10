@@ -7,13 +7,14 @@ import tempfile
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from .config import APP_VERSION, FRONTEND_DIR
-from .database import (DEFAULTS, audit, connect, event, init_db, now, setting,
-                       set_setting)
+from .loop import install_exception_handler
+from .database import (DEFAULTS, audit, connect, event, init_db, now, read_bool,
+                       setting, set_setting)
 from .llm import ollama_status, pull_model
 from .agent import Agent
 from .memory import retrieve, retrieve_experiences, store_knowledge
@@ -30,6 +31,8 @@ from .tools import (TOOL_SPECS, permissions, recent_audit, recent_tool_runs,
 from .actions import execute_intents, format_results, intent_names
 from . import skills as skill_vault
 from . import web_learn
+from . import autonomous
+from . import knowledge_graph
 
 app = FastAPI(title='NEXUS AI', version=APP_VERSION)
 app.add_middleware(
@@ -48,6 +51,8 @@ SETTINGS_KEYS = [
     'repo_chunk_lines', 'repo_chunk_overlap', 'chat_history', 'system_name',
     'learn_depth', 'learn_max_links', 'web_chunk_chars', 'web_chunk_overlap', 'max_web_pages',
     'skills_auto_context', 'skills_repo',
+    'learning_speed', 'learning_pages_per_session', 'learning_topics', 'learning_random',
+    'learning_auto_verify', 'learning_resume', 'learning_session_interval_seconds',
 ]
 
 
@@ -100,6 +105,13 @@ class Settings(BaseModel):
     max_web_pages: int | None = Field(default=None, ge=1, le=200)
     skills_auto_context: bool | None = None
     skills_repo: str | None = None
+    learning_speed: str | None = Field(default=None, pattern='^(slow|normal|fast)$')
+    learning_pages_per_session: int | None = Field(default=None, ge=1, le=20)
+    learning_topics: str | None = None
+    learning_random: bool | None = None
+    learning_auto_verify: bool | None = None
+    learning_resume: bool | None = None
+    learning_session_interval_seconds: int | None = Field(default=None, ge=30, le=3600)
 
 
 class ProposalDecision(BaseModel):
@@ -159,6 +171,16 @@ class SearchQuery(BaseModel):
     repo_id: int | None = None
 
 
+class LearningStart(BaseModel):
+    topic: str | None = Field(default=None, max_length=140)
+    mode: str | None = Field(default=None, pattern='^(topic|random|once)$')
+
+
+class LearningTopicBody(BaseModel):
+    topic: str = Field(min_length=3, max_length=140)
+    priority: int | None = Field(default=None, ge=1, le=10)
+
+
 def _count(db, sql):
     row = db.execute(sql).fetchone()
     return row['n'] if row else 0
@@ -166,6 +188,9 @@ def _count(db, sql):
 
 @app.on_event('startup')
 async def startup():
+    # Suppress CPython's benign Windows connection-reset tracebacks (WinError 64
+    # and friends) without hiding real errors. Set NEXUS_VERBOSE_NETWORK=1 to see them.
+    install_exception_handler()
     init_db()
     try:
         seeded = skill_vault.seed_builtin()
@@ -173,6 +198,13 @@ async def startup():
             event('skills', f"Offline skill vault ready: {seeded['seeded']} skills ({seeded.get('version')}).")
     except Exception as e:
         event('warning', f'Skill seed skipped: {e}')
+    try:
+        interrupted = autonomous.mark_interrupted_sessions()
+        if interrupted:
+            event('recovery', f'Marked {interrupted} interrupted autonomous learning session(s).')
+        await autonomous.maybe_resume()
+    except Exception as e:
+        event('warning', f'Autonomous learning startup skipped: {e}')
     if setting('auto_resume', 'true').lower() == 'true' and setting('resume_on_boot', 'false').lower() == 'true':
         await agent.recover()
         await agent.start(mode=setting('mode', 'assisted'))
@@ -220,6 +252,8 @@ async def status():
         'web_source_count': web_sources, 'web_ready_count': web_ready, 'web_chunk_count': web_chunks,
         'skill_count': skill_total, 'skill_enabled': skill_enabled,
         'nexus_model': 'nex0.2a',
+        'autonomous_running': autonomous.STATE['running'],
+        'autonomous_paused': autonomous.STATE['paused'],
         'platform': platform.platform(), 'mode': setting('mode'),
         'hardware': hw, 'latest_quality_score': latest['score'] if latest else None,
         'provider': current, 'providers': catalog,
@@ -519,6 +553,102 @@ async def delete_knowledge(item_id: int):
     with connect() as db:
         db.execute('DELETE FROM knowledge WHERE id=?', (item_id,))
     return {'ok': True}
+
+
+@app.get('/api/knowledge/graph')
+async def knowledge_graph_data(limit: int = 160, topic: str = '', verification: str = ''):
+    return knowledge_graph.build_graph(limit=limit, topic=topic, verification=verification)
+
+
+@app.get('/api/knowledge/history')
+async def knowledge_history_data(q: str = '', topic: str = '', verification: str = '',
+                                 source: str = '', status: str = '',
+                                 limit: int = 200, offset: int = 0):
+    return knowledge_graph.knowledge_history(q=q, topic=topic, verification=verification,
+                                             source=source, status=status,
+                                             limit=limit, offset=offset)
+
+
+# --------------------------------------------------------------------------- #
+# Autonomous web learning
+# --------------------------------------------------------------------------- #
+@app.get('/api/autonomous/status')
+async def autonomous_status():
+    return autonomous.status()
+
+
+@app.post('/api/autonomous/start')
+async def autonomous_start(body: LearningStart | None = None):
+    body = body or LearningStart()
+    try:
+        return await autonomous.start(topic=body.topic, mode=body.mode or 'topic')
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post('/api/autonomous/pause')
+async def autonomous_pause():
+    return await autonomous.pause()
+
+
+@app.post('/api/autonomous/resume')
+async def autonomous_resume():
+    try:
+        return await autonomous.resume()
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
+
+
+@app.post('/api/autonomous/stop')
+async def autonomous_stop():
+    return await autonomous.stop()
+
+
+@app.post('/api/autonomous/random')
+async def autonomous_random():
+    try:
+        return await autonomous.random_explore()
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
+
+
+@app.get('/api/autonomous/topics')
+async def autonomous_topics():
+    return autonomous.list_topics()
+
+
+@app.post('/api/autonomous/topics/discover')
+async def autonomous_topics_discover():
+    if not read_bool('permission_internet'):
+        raise HTTPException(403, 'Internet permission is off. Enable it in Permissions first.')
+    created = await autonomous.discover_topics(1)
+    return {'created': created, 'topics': autonomous.list_topics()}
+
+
+@app.post('/api/autonomous/topics')
+async def autonomous_topic_add(body: LearningTopicBody):
+    try:
+        return autonomous.add_topic(body.topic, source='user',
+                                    priority=body.priority if body.priority is not None else 9)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.delete('/api/autonomous/topics/{topic_id}')
+async def autonomous_topic_delete(topic_id: int):
+    return autonomous.remove_topic(topic_id)
+
+
+@app.get('/api/autonomous/history')
+async def autonomous_history(limit: int = 40):
+    return autonomous.history(limit)
+
+
+@app.get('/api/autonomous/stats')
+async def autonomous_stats():
+    return autonomous.stats()
 
 
 @app.get('/api/memory')
@@ -845,7 +975,12 @@ async def _prepare_chat(body: ChatMessage):
     tool_text = format_results(tool_results)
     _save_message(conversation_id, 'user', body.message, {'provider': provider})
     context, sources, stats = await _build_context(body.message, body.repo_id)
-    if tool_text:
+    if provider == 'nexus':
+        # Native Core performs its own relevance-filtered retrieval. Passing the
+        # generic provider context would re-append unfiltered evidence and make
+        # unrelated answers look supported, so only live tool results survive.
+        context = ('[LIVE TOOL RESULTS]\n' + tool_text) if tool_text else ''
+    elif tool_text:
         context += '\n\n[LIVE TOOL RESULTS]\n' + tool_text
     messages = history + [{'role': 'user', 'content': body.message}]
     return provider, conversation_id, messages, context, sources, stats, tool_results
@@ -956,6 +1091,12 @@ async def health():
 @app.get('/')
 async def index():
     return FileResponse(FRONTEND_DIR / 'index.html')
+
+
+@app.get('/favicon.ico', include_in_schema=False)
+async def favicon():
+    # Browsers still request this even when index.html declares an inline icon.
+    return Response(status_code=204)
 
 
 app.mount('/static', StaticFiles(directory=FRONTEND_DIR), name='static')

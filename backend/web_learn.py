@@ -19,7 +19,22 @@ from .database import connect, event, now, read_bool, read_int, setting
 from .llm import local_embed
 from .memory import store_knowledge
 from .research import allowed_domain, fetch_page
-from .textutil import clip, lexical_score, summarize_text
+from .textutil import clip, keywords, lexical_score, summarize_text
+
+# One polite fetcher at a time: learning packs queue several pages at once, and
+# concurrent hits against the same site invite rate limits / robots violations.
+_FETCH_LOCK = asyncio.Lock()
+_ACTIVE_URLS = set()
+
+
+async def _fetch_page_throttled(url, with_links=False, delay=None):
+    """Fetch one page at a time, then wait the configured politeness delay."""
+    async with _FETCH_LOCK:
+        try:
+            return await fetch_page(url, with_links=with_links)
+        finally:
+            wait = delay if delay is not None else setting('request_delay_seconds', '3')
+            await asyncio.sleep(max(1, int(wait or 3)))
 
 LEARNING_PACKS = [
     {
@@ -200,12 +215,13 @@ def _same_site_links(base_url, links):
     return out
 
 
-async def _learn_page(source_id, url, title, topic, depth, root_id=None):
+async def _learn_page(source_id, url, title, topic, depth, root_id=None, with_links=None, pace=None):
     _set_status(source_id, 'learning', 'fetching')
-    if depth > 0:
-        page_title, text, links = await fetch_page(url, with_links=True)
+    want_links = (depth > 0) if with_links is None else bool(with_links)
+    if want_links:
+        page_title, text, links = await _fetch_page_throttled(url, with_links=True, delay=pace)
     else:
-        page_title, text = await fetch_page(url)
+        page_title, text = await _fetch_page_throttled(url, delay=pace)
         links = []
     page_title = (title or page_title or url).strip()
     chunks = chunk_text(text)
@@ -234,11 +250,35 @@ async def _learn_page(source_id, url, title, topic, depth, root_id=None):
             await store_knowledge(f'Web: {page_title}', summary, url, topic, 0.74, 'web-learned')
         except Exception:
             pass
+    else:
+        # Re-learning a page should refresh its summary instead of leaving stale text.
+        with connect() as db:
+            db.execute('UPDATE knowledge SET title=?,content=?,topic=?,confidence=?,created_at=? WHERE id=?',
+                       (f'Web: {page_title}', summary, topic, 0.74, now(), exists['id']))
     event('web', f'Learned page: {page_title} — {len(chunks)} chunks, {len(text)} chars.')
     return page_title, links
 
 
+async def learn_page_now(url, title=None, topic=None, depth=None, pace=None):
+    """Learn a URL synchronously (used by the autonomous learning engine)."""
+    _require_internet()
+    url = validate_url(url)
+    topic = (topic or 'web').strip()[:60] or 'web'
+    depth = read_int('learn_depth', 0) if depth is None else max(0, min(int(depth), 1))
+    source_id = _reset_existing(url, title, topic, depth) or _insert_source(url, title, topic, depth)
+    page_title, links = await _learn_page(source_id, url, title, topic, 0, with_links=True, pace=pace)
+    return {'id': source_id, 'title': page_title, 'links': links, 'url': url}
+
+
+def same_site_links(base_url, links):
+    return _same_site_links(base_url, links)
+
+
 async def _learn_task(source_id, url, title, topic, depth):
+    if url in _ACTIVE_URLS:
+        event('web', f'URL learning already in progress, skipped duplicate: {url}')
+        return
+    _ACTIVE_URLS.add(url)
     root_id = source_id if depth > 0 else None
     try:
         page_title, links = await _learn_page(source_id, url, title, topic, depth, root_id)
@@ -246,7 +286,6 @@ async def _learn_task(source_id, url, title, topic, depth):
             limit = max(1, min(read_int('learn_max_links', 8), 24))
             follow = _same_site_links(url, links)[:limit]
             event('web', f'Following {len(follow)} same-site link(s) from {url}.')
-            delay = max(1, int(setting('request_delay_seconds', '3') or 3))
             for link in follow:
                 with connect() as db:
                     exists = db.execute("SELECT 1 FROM web_sources WHERE url=? AND status='ready' LIMIT 1",
@@ -259,10 +298,11 @@ async def _learn_task(source_id, url, title, topic, depth):
                 except Exception as e:
                     _set_status(child_id, 'failed', 'failed', error=str(e)[:400])
                     event('warning', f'URL learning skipped {link}: {e}')
-                await asyncio.sleep(delay)
     except Exception as e:
         _set_status(source_id, 'failed', 'failed', error=str(e)[:600])
         event('warning', f'URL learning failed for {url}: {e}')
+    finally:
+        _ACTIVE_URLS.discard(url)
 
 
 async def learn_pack(pack_id, depth=None):
@@ -320,41 +360,79 @@ def delete_source(source_id):
             ids += [r['id'] for r in db.execute('SELECT id FROM web_sources WHERE root_id=? AND id<>?',
                                                (source_id, source_id)).fetchall()]
         marks = ','.join('?' for _ in ids)
+        urls = [r['url'] for r in db.execute(
+            f'SELECT url FROM web_sources WHERE id IN ({marks})', ids).fetchall()]
+        knowledge_deleted = 0
+        if urls:
+            kmarks = ','.join('?' for _ in urls)
+            knowledge_deleted = db.execute(
+                f'DELETE FROM knowledge WHERE source_url IN ({kmarks})', urls).rowcount
         chunks = db.execute(f'DELETE FROM web_chunks WHERE source_id IN ({marks})', ids).rowcount
         db.execute(f'DELETE FROM web_sources WHERE id IN ({marks})', ids)
-    event('web', f'Deleted learned URL(s) {ids} ({chunks} chunks).')
-    return {'ok': True, 'deleted_sources': len(ids), 'chunks_deleted': chunks}
+    event('web', f'Deleted learned URL(s) {ids} ({chunks} chunks, {knowledge_deleted} knowledge items).')
+    return {'ok': True, 'deleted_sources': len(ids), 'chunks_deleted': chunks,
+            'knowledge_deleted': knowledge_deleted}
 
 
 async def search_web_chunks(query, limit=6):
+    """Two-stage retrieval: SQL/lexical shortlist, then semantic rerank.
+
+    Web indexes can grow to tens of thousands of chunks; decoding every embedding
+    on each chat turn is slow. Mirror the repository search strategy: use a cheap
+    keyword prefilter and only decode vectors for the shortlist.
+    """
     import math
     qvec = local_embed(query)
+    qnorm = math.sqrt(sum(a * a for a in qvec)) or 1.0
+    base_sql = ('SELECT wc.id,wc.source_id,wc.url,wc.title,wc.ordinal,wc.content,wc.embedding,'
+                'wc.embedding_kind,ws.topic,ws.title source_title '
+                'FROM web_chunks wc JOIN web_sources ws ON ws.id=wc.source_id')
+    where = ["ws.status='ready'"]
+    params = []
+    kws = keywords(query, 8)
+    if kws:
+        where.append('(' + ' OR '.join(['wc.content LIKE ?'] * len(kws)) + ')')
+        params.extend(f'%{k}%' for k in kws)
+    sql = base_sql + ' WHERE ' + ' AND '.join(where)
+    row_limit = 1000 if kws else 200
     with connect() as db:
-        rows = [dict(r) for r in db.execute(
-            'SELECT wc.id,wc.source_id,wc.url,wc.title,wc.ordinal,wc.content,wc.embedding,wc.embedding_kind,'
-            'ws.topic,ws.title source_title FROM web_chunks wc JOIN web_sources ws ON ws.id=wc.source_id '
-            "WHERE ws.status='ready' ORDER BY wc.id DESC LIMIT 20000").fetchall()]
-    scored = []
+        rows = [dict(r) for r in db.execute(sql + f' ORDER BY wc.id DESC LIMIT {row_limit}', params).fetchall()]
+        if len(rows) < 40:
+            recent = [dict(r) for r in db.execute(
+                base_sql + " WHERE ws.status='ready' ORDER BY wc.id DESC LIMIT 200").fetchall()]
+            seen = {r['id'] for r in rows}
+            rows.extend(r for r in recent if r['id'] not in seen)
+    lexical = []
     for row in rows:
+        score = lexical_score(query, row['content'])
+        if score > 0.002:
+            lexical.append((score, row))
+    lexical.sort(key=lambda x: x[0], reverse=True)
+    shortlist = lexical[:240]
+    if len(shortlist) < 60:
+        seen = {id(row) for _, row in shortlist}
+        for row in rows[:120]:
+            if id(row) not in seen:
+                shortlist.append((0.0, row))
+    scored = []
+    for base, row in shortlist:
         semantic = 0.0
         if row.get('embedding') and (row.get('embedding_kind') or 'local') == 'local':
             try:
                 vec = json.loads(row['embedding'])
                 if len(vec) == len(qvec):
                     dot = sum(a * b for a, b in zip(qvec, vec))
-                    na = math.sqrt(sum(a * a for a in qvec)) or 1
-                    nb = math.sqrt(sum(b * b for b in vec)) or 1
-                    semantic = dot / (na * nb)
+                    nb = math.sqrt(sum(b * b for b in vec)) or 1.0
+                    semantic = dot / (qnorm * nb)
             except Exception:
                 pass
-        lexical = lexical_score(query, row['content'])
-        score = semantic * 0.7 + min(lexical, 1.2) * 0.3 if semantic else lexical
+        score = semantic * 0.7 + min(base, 1.2) * 0.3 if semantic else base
         if score > 0.002:
             row['score'] = round(score, 4)
             row.pop('embedding', None)
             row['repo_name'] = None
             scored.append(row)
-    scored.sort(key=lambda x: x['score'], reverse=True)
+    scored.sort(key=lambda x: (x['score'], -x['id']), reverse=True)
     return scored[:max(1, min(limit, 30))]
 
 

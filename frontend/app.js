@@ -6,9 +6,11 @@ const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
 const titles = {
   overview: 'Command Center', repos: 'Repository Lab', urllearn: 'URL Learn',
-  skills: 'Skill Vault', chat: 'AI Chat',
+  skills: 'Skill Vault', chat: 'Nexus Core',
+  autonomous: 'Autonomous Learning',
   learning: 'Autonomous Research', knowledge: 'Knowledge Base', memory: 'Memory Manager',
-  graph: 'Knowledge Graph', tasks: 'Task Manager', activity: 'Activity Stream',
+  graph: 'Knowledge Graph', history: 'Learning History', tasks: 'Task Manager',
+  activity: 'Activity Stream', monitor: 'System Monitor',
   experiments: 'Experiments', analytics: 'Analytics', models: 'Providers',
   permissions: 'Permissions', settings: 'Settings'
 };
@@ -17,7 +19,10 @@ const state = {
   status: null, providers: [], provider: 'nexus', repos: [],
   currentRepo: null, conversation: null, messages: [], repoContext: null,
   tools: [], permissions: null, sending: false, refreshing: false,
-  webSources: [], currentWeb: null, skills: [], currentSkill: null, skillMeta: null
+  webSources: [], currentWeb: null, skills: [], currentSkill: null, skillMeta: null,
+  auto: null, autoTimer: null, lastEventId: 0, coreTimer: null,
+  graph: { nodes: [], edges: [], stats: null, scale: 1, offsetX: 0, offsetY: 0,
+           dragging: null, pointer: null, hover: null, selected: null, active: false }
 };
 
 const PAGE_LOADERS = {
@@ -26,12 +31,15 @@ const PAGE_LOADERS = {
   urllearn: () => loadUrlLearn(),
   skills: () => loadSkillPage(),
   chat: () => { loadConversations(); refreshRepoSelect(); updateChatEngine(); },
+  autonomous: () => loadAutonomous(),
   learning: () => loadTasks(),
   knowledge: () => loadKnowledge(),
   memory: () => loadMemory(),
   graph: () => loadGraph(),
+  history: () => loadHistory(),
   tasks: () => loadTasks(),
   activity: () => loadEvents(),
+  monitor: () => loadMonitor(),
   experiments: () => loadProposals(),
   analytics: () => loadAnalytics(),
   models: () => loadProviders(),
@@ -158,6 +166,13 @@ function showPage(name) {
   $$('.nav').forEach((el) => el.classList.toggle('active', el.dataset.page === name));
   $('pageTitle').textContent = titles[name];
   $('crumb').textContent = name.toUpperCase();
+  state.graph.active = name === 'graph';
+  if (name === 'autonomous') {
+    startAutoPolling();
+  } else {
+    stopAutoPolling();
+  }
+  if (name === 'graph') startGraphLoop();
   if (PAGE_LOADERS[name]) {
     Promise.resolve(PAGE_LOADERS[name]()).catch((e) => toast(e.message, 'error'));
   }
@@ -224,9 +239,47 @@ function updateStatusUI(s) {
   state.providers = s.providers || state.providers;
   state.permissions = s.permissions || state.permissions;
   state.provider = (s.provider && s.provider.id) || state.provider;
+  const core = $('coreVisual');
+  if (core) {
+    core.dataset.state = s.autonomous_running
+      ? (s.autonomous_paused ? 'paused' : 'learning')
+      : (s.running ? (s.paused ? 'paused' : 'active') : 'idle');
+  }
+  if ($('autoStateTag')) {
+    $('autoStateTag').textContent = s.autonomous_running
+      ? (s.autonomous_paused ? 'PAUSED' : 'LEARNING') : 'IDLE';
+  }
   renderProviderSwitch();
   updateChatEngine();
 }
+
+function pulseCore(kind) {
+  const core = $('coreVisual');
+  if (!core) return;
+  const cls = kind === 'error' ? 'core-error' : 'core-pulse';
+  core.classList.remove('core-pulse', 'core-error');
+  void core.offsetWidth;
+  core.classList.add(cls);
+  clearTimeout(state.coreTimer);
+  state.coreTimer = setTimeout(() => core.classList.remove('core-pulse', 'core-error'), 2400);
+}
+
+function pulseFromEvents(events) {
+  if (!events || !events.length) return;
+  const latest = Math.max(...events.map((e) => Number(e.id || 0)));
+  if (!state.lastEventId) { state.lastEventId = latest; return; }
+  if (latest <= state.lastEventId) return;
+  const fresh = events.filter((e) => Number(e.id || 0) > state.lastEventId);
+  state.lastEventId = latest;
+  if (fresh.some((e) => /warning|error|failed|blocked/i.test(String(e.kind)))) {
+    pulseCore('error');
+  } else if (fresh.some((e) => /learning|discovery|verification|knowledge|web|repo|skills/i.test(String(e.kind)))) {
+    pulseCore('knowledge');
+  } else {
+    pulseCore('event');
+  }
+}
+
 async function refresh() {
   if (state.refreshing) return;
   state.refreshing = true;
@@ -237,6 +290,7 @@ async function refresh() {
       const events = await api('/events');
       const html = events.slice(0, 6).map(eventHTML).join('') || '<div class="empty">No runtime events yet.</div>';
       if ($('liveEvents')) $('liveEvents').innerHTML = html;
+      pulseFromEvents(events);
     } catch { }
   } catch (e) {
     $('statusText').textContent = 'BACKEND OFFLINE';
@@ -475,6 +529,7 @@ async function loadUrlLearn() {
     )).join('') || '<div class="empty">No packs available.</div>';
   } catch (e) { toast(e.message, 'error'); }
 }
+function loadWebSources() { return loadUrlLearn(); }
 async function learnUrl() {
   const url = $('webUrl').value.trim();
   if (!url) return toast('Paste a public HTTPS URL.', 'warn');
@@ -998,22 +1053,626 @@ async function deleteMemory(id) {
 }
 
 /* -------------------------------------------------------------------- graph */
+const GRAPH_COLORS = { knowledge: '#5eead4', topic: '#7aa2ff', source: '#f472b6', concept: '#fbbf24' };
+const EDGE_COLORS = { in_topic: 'rgba(122,162,255,0.22)', from_source: 'rgba(244,114,182,0.18)',
+                      mentions: 'rgba(94,234,212,0.14)', related: 'rgba(251,191,36,0.28)' };
+
+function knowledgeNodeColor(node) {
+  const status = String(node.verification || 'unverified');
+  if (status === 'corroborated' || status === 'verified') return '#39ff9a';
+  if (status === 'user-reported') return '#fbbf24';
+  if (status === 'single-source') return '#5eead4';
+  if (status === 'web-learned') return '#7aa2ff';
+  return '#8fa3b8';
+}
+
+function graphNodeRadius(node) {
+  return Math.max(3.5, Math.min(14, Number(node.size || 5) * 0.82));
+}
+
+function layoutGraph(data) {
+  const nodes = data.nodes.map((n) => Object.assign({}, n));
+  const topics = nodes.filter((n) => n.type === 'topic');
+  const concepts = nodes.filter((n) => n.type === 'concept');
+  const sources = nodes.filter((n) => n.type === 'source');
+  const knowledge = nodes.filter((n) => n.type === 'knowledge');
+  const topicAngle = new Map();
+  topics.forEach((t, i) => topicAngle.set(t.id, (i / Math.max(1, topics.length)) * Math.PI * 2));
+  const inner = 120 + Math.min(130, topics.length * 4);
+  topics.forEach((t) => {
+    const a = topicAngle.get(t.id);
+    t.x = Math.cos(a) * inner; t.y = Math.sin(a) * inner;
+  });
+  const perTopic = new Map();
+  knowledge.forEach((k) => {
+    const tid = 't:' + (k.topic || 'uncategorized');
+    const base = topicAngle.has(tid) ? topicAngle.get(tid) : 0;
+    const idx = perTopic.get(tid) || 0;
+    perTopic.set(tid, idx + 1);
+    const ring = inner + 44 + Math.floor(idx / 8) * 38;
+    const angle = base + (((idx % 8) / 8) - 0.5) * 1.05;
+    k.x = Math.cos(angle) * ring; k.y = Math.sin(angle) * ring;
+  });
+  concepts.forEach((c, i) => {
+    const label = String(c.label || '').toLowerCase();
+    const linked = knowledge.filter((k) => String(k.title || '').toLowerCase().includes(label)).slice(0, 12);
+    if (linked.length) {
+      c.x = linked.reduce((sum, k) => sum + k.x, 0) / linked.length + Math.cos(i * 2.4) * 32;
+      c.y = linked.reduce((sum, k) => sum + k.y, 0) / linked.length + Math.sin(i * 2.4) * 32;
+    } else {
+      const a = i * 0.9, r = inner + 230;
+      c.x = Math.cos(a) * r; c.y = Math.sin(a) * r;
+    }
+  });
+  sources.forEach((s, i) => {
+    const label = String(s.label || '');
+    const linked = knowledge.filter((k) => k.source_url && String(k.source_url).includes(label));
+    if (linked.length) {
+      s.x = linked.reduce((sum, k) => sum + k.x, 0) / linked.length;
+      s.y = linked.reduce((sum, k) => sum + k.y, 0) / linked.length + 46;
+    } else {
+      const a = -i * 0.7, r = inner + 300;
+      s.x = Math.cos(a) * r; s.y = Math.sin(a) * r;
+    }
+  });
+  nodes.forEach((n, i) => {
+    if (typeof n.x !== 'number' || typeof n.y !== 'number') {
+      const a = i * 0.8, r = inner + 310;
+      n.x = Math.cos(a) * r; n.y = Math.sin(a) * r;
+    }
+  });
+  // Light deterministic separation so labels/nodes do not stack.
+  for (let pass = 0; pass < 20; pass++) {
+    for (let i = 0; i < nodes.length; i++) {
+      const a = nodes[i];
+      for (let j = i + 1; j < nodes.length; j++) {
+        const b = nodes[j];
+        let dx = b.x - a.x, dy = b.y - a.y;
+        let d2 = dx * dx + dy * dy;
+        if (d2 > 3600) continue;
+        if (d2 < 1) { dx = 0.7; dy = 0.4; d2 = 1; }
+        const d = Math.sqrt(d2);
+        const push = (60 - d) * 0.045;
+        dx /= d; dy /= d;
+        a.x -= dx * push; a.y -= dy * push;
+        b.x += dx * push; b.y += dy * push;
+      }
+    }
+  }
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  return { nodes, edges: data.edges || [], byId, stats: data.stats || {} };
+}
+
+function fillGraphSelect(id, values, current) {
+  const el = $(id);
+  if (!el) return;
+  const keep = current != null ? current : el.value;
+  el.innerHTML = '<option value="">' + (id === 'graphTopic' ? 'All topics' : 'All verification') + '</option>' +
+    values.map((v) => '<option value="' + esc(v) + '">' + esc(v) + '</option>').join('');
+  if (values.includes(keep)) el.value = keep;
+}
+
+function graphStatRow(label, value) {
+  return '<div class="graph-stat"><span>' + esc(label) + '</span><b>' + esc(value) + '</b></div>';
+}
+
+function renderGraphSummary(stats) {
+  const counts = stats.counts || {};
+  if ($('graphNodeTag')) $('graphNodeTag').textContent = num(stats.nodes || 0) + ' NODES';
+  if ($('graphStats')) {
+    $('graphStats').innerHTML =
+      graphStatRow('Knowledge nodes', num(counts.knowledge || 0)) +
+      graphStatRow('Topic nodes', num(counts.topic || 0)) +
+      graphStatRow('Source domains', num(counts.source || 0)) +
+      graphStatRow('Concept keywords', num(counts.concept || 0)) +
+      graphStatRow('Relationships', num(stats.edges || 0)) +
+      graphStatRow('Verified records', num(stats.verified || 0));
+  }
+  if ($('graphBars')) {
+    const topics = stats.topics || [];
+    const max = Math.max(1, ...topics.map((t) => Number(t.count || 0)));
+    $('graphBars').innerHTML = topics.slice(0, 14).map((t) => (
+      '<div class="gbar"><span>' + esc(clip(t.topic, 28)) + '</span>' +
+      '<div class="track"><div class="fill" style="width:' + Math.round(Number(t.count || 0) / max * 100) + '%"></div></div>' +
+      '<b>' + Number(t.count || 0) + '</b></div>'
+    )).join('') || '<div class="empty">No stored topics yet.</div>';
+  }
+  if ($('graphLegend')) {
+    $('graphLegend').innerHTML = [
+      ['knowledge', 'Knowledge'], ['topic', 'Topic'], ['source', 'Source domain'], ['concept', 'Concept keyword']
+    ].map(([key, label]) => '<span class="legend"><i style="background:' + GRAPH_COLORS[key] + '"></i>' + label + '</span>').join('') +
+      '<span class="legend"><i style="background:#39ff9a"></i>Corroborated</span>' +
+      '<span class="legend"><i style="background:#fbbf24"></i>User reported</span>';
+  }
+}
+
 async function loadGraph() {
   try {
-    const rows = await api('/knowledge');
-    const groups = {};
-    rows.forEach((k) => { const topic = k.topic || 'Uncategorized'; (groups[topic] = groups[topic] || []).push(k); });
-    const entries = Object.entries(groups).sort((a, b) => b[1].length - a[1].length);
-    const max = Math.max(1, ...entries.map(([, items]) => items.length));
-    $('graphBars').innerHTML = entries.slice(0, 12).map(([topic, items]) => (
-      '<div class="gbar"><span>' + esc(clip(topic, 26)) + '</span><div class="track"><div class="fill" style="width:' +
-      Math.round(items.length / max * 100) + '%"></div></div><b>' + items.length + '</b></div>'
-    )).join('') || '<div class="empty">No graph nodes yet.</div>';
-    $('graphList').innerHTML = entries.map(([topic, items]) => (
-      '<article class="knowledge-card"><h4>◈ ' + esc(topic) + '</h4>' +
-      '<div class="knowledge-meta">' + items.length + ' linked record(s)</div>' +
-      '<p>' + items.map((x) => esc(clip(x.title, 80))).join(' · ') + '</p></article>'
-    )).join('') || '<div class="empty">Store knowledge to create topic clusters.</div>';
+    const qs = new URLSearchParams();
+    qs.set('limit', '220');
+    const topic = $('graphTopic') ? $('graphTopic').value : '';
+    const verification = $('graphVerification') ? $('graphVerification').value : '';
+    if (topic) qs.set('topic', topic);
+    if (verification) qs.set('verification', verification);
+    const data = await api('/knowledge/graph?' + qs.toString());
+    const layout = layoutGraph(data);
+    const g = state.graph;
+    g.nodes = layout.nodes; g.edges = layout.edges; g.byId = layout.byId; g.stats = layout.stats;
+    g.selected = null; g.hover = null; g.dragging = null; g.pointer = null;
+    g.scale = 1; g.offsetX = 0; g.offsetY = 0;
+    fillGraphSelect('graphTopic', (layout.stats.topics || []).map((t) => t.topic), topic);
+    fillGraphSelect('graphVerification', ['corroborated', 'single-source', 'web-learned', 'user-reported', 'unverified'], verification);
+    renderGraphSummary(layout.stats);
+    if ($('graphInspector')) $('graphInspector').classList.add('hidden');
+    startGraphLoop();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+function graphSize() {
+  const canvas = $('graphCanvas');
+  if (!canvas) return null;
+  const wrap = canvas.parentElement;
+  const rect = wrap.getBoundingClientRect();
+  const w = Math.max(320, Math.floor(rect.width));
+  const h = Math.max(300, Math.floor(rect.height || 540));
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const targetW = Math.floor(w * dpr), targetH = Math.floor(h * dpr);
+  if (canvas.width !== targetW || canvas.height !== targetH) {
+    canvas.width = targetW;
+    canvas.height = targetH;
+  }
+  return { canvas, w, h, dpr };
+}
+
+function graphScreenToWorld(sx, sy) {
+  const g = state.graph;
+  const view = g.view || { w: 800, h: 540 };
+  return { x: (sx - view.w / 2 - g.offsetX) / g.scale,
+           y: (sy - view.h / 2 - g.offsetY) / g.scale };
+}
+
+function graphHitTest(sx, sy) {
+  const g = state.graph;
+  const view = g.view || { w: 800, h: 540 };
+  let best = null, bestDist = Infinity;
+  for (const node of g.nodes) {
+    const nx = view.w / 2 + g.offsetX + node.x * g.scale;
+    const ny = view.h / 2 + g.offsetY + node.y * g.scale;
+    const d = Math.hypot(nx - sx, ny - sy);
+    const radius = Math.max(7, graphNodeRadius(node) * g.scale + 5);
+    if (d <= radius && d < bestDist) { best = node; bestDist = d; }
+  }
+  return best;
+}
+
+function graphNodeScreen(node) {
+  const g = state.graph;
+  const view = g.view || { w: 800, h: 540 };
+  return { x: view.w / 2 + g.offsetX + node.x * g.scale,
+           y: view.h / 2 + g.offsetY + node.y * g.scale };
+}
+
+function drawGraph(now) {
+  const sized = graphSize();
+  if (!sized) return;
+  const { canvas, w, h, dpr } = sized;
+  state.graph.view = { w, h };
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  const g = state.graph;
+  const bg = ctx.createRadialGradient(w / 2, h / 2, 40, w / 2, h / 2, Math.max(w, h) / 1.25);
+  bg.addColorStop(0, 'rgba(11,22,34,0.96)');
+  bg.addColorStop(1, 'rgba(5,9,15,0.99)');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, w, h);
+  const filter = (($('graphSearch') || {}).value || '').trim().toLowerCase();
+  const selected = g.selected;
+  const hover = g.hover;
+  const pulse = 0.5 + Math.sin((now || 0) / 900) * 0.5;
+
+  // Edges
+  ctx.lineWidth = 1;
+  for (const edge of g.edges) {
+    const a = g.byId.get(edge.source), b = g.byId.get(edge.target);
+    if (!a || !b) continue;
+    const sa = graphNodeScreen(a), sb = graphNodeScreen(b);
+    const dimA = filter && !String(a.label || '').toLowerCase().includes(filter);
+    const dimB = filter && !String(b.label || '').toLowerCase().includes(filter);
+    ctx.strokeStyle = EDGE_COLORS[edge.relation] || 'rgba(120,150,170,0.12)';
+    if (dimA && dimB) ctx.strokeStyle = 'rgba(120,150,170,0.045)';
+    ctx.beginPath();
+    ctx.moveTo(sa.x, sa.y);
+    ctx.lineTo(sb.x, sb.y);
+    ctx.stroke();
+  }
+
+  // Nodes
+  for (const node of g.nodes) {
+    const pos = graphNodeScreen(node);
+    if (pos.x < -80 || pos.y < -80 || pos.x > w + 80 || pos.y > h + 80) continue;
+    const radius = Math.max(2.5, graphNodeRadius(node) * g.scale);
+    const base = node.type === 'knowledge' ? knowledgeNodeColor(node) : (GRAPH_COLORS[node.type] || '#8fa3b8');
+    const dim = filter && !String(node.label || '').toLowerCase().includes(filter);
+    const active = node === selected || node === hover;
+    ctx.globalAlpha = dim ? 0.16 : (node.type === 'knowledge' ? 0.9 : 1);
+    if (active || node.type === 'topic') {
+      ctx.shadowColor = base;
+      ctx.shadowBlur = active ? 22 : 10 + pulse * 8;
+    } else {
+      ctx.shadowBlur = 0;
+    }
+    ctx.fillStyle = base;
+    ctx.beginPath();
+    ctx.arc(pos.x, pos.y, radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    if (active) {
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.arc(pos.x, pos.y, radius + 3, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    const showLabel = !dim && (node.type === 'topic' || node.type === 'source' || active || g.scale >= 0.95);
+    if (showLabel) {
+      ctx.globalAlpha = dim ? 0.2 : 0.92;
+      ctx.fillStyle = '#dbe7f3';
+      ctx.font = (node.type === 'topic' ? '600 11px ' : '10px ') + 'JetBrains Mono, monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText(String(node.label || ''), pos.x, pos.y + radius + 12);
+    }
+  }
+  ctx.globalAlpha = 1;
+  ctx.shadowBlur = 0;
+}
+
+function startGraphLoop() {
+  if (!state.graph.active || state.graph.raf) return;
+  const tick = (ts) => {
+    if (!state.graph.active) { state.graph.raf = null; return; }
+    if (!state.graph.last || ts - state.graph.last > 33) {
+      state.graph.last = ts;
+      if (state.graph.nodes.length) drawGraph(ts);
+    }
+    state.graph.raf = requestAnimationFrame(tick);
+  };
+  state.graph.raf = requestAnimationFrame(tick);
+}
+
+function filterGraph() { startGraphLoop(); }
+
+function resetGraphView() {
+  const g = state.graph;
+  g.scale = 1; g.offsetX = 0; g.offsetY = 0; g.selected = null; g.hover = null;
+  if ($('graphInspector')) $('graphInspector').classList.add('hidden');
+  startGraphLoop();
+}
+
+function selectGraphNode(node) {
+  const g = state.graph;
+  g.selected = node;
+  const box = $('graphInspector');
+  if (!box) return;
+  box.classList.remove('hidden');
+  let body = '';
+  if (node.type === 'knowledge') {
+    body =
+      '<div class="inspector-kicker">KNOWLEDGE NODE</div>' +
+      '<h4>' + esc(node.label) + '</h4>' +
+      '<div class="knowledge-meta">' + esc(node.topic || 'uncategorized') + ' · ' +
+      esc(String(node.verification || 'unverified').toUpperCase()) + '</div>' +
+      '<p class="muted">Stored ' + esc(when(node.created_at)) + '</p>' +
+      (node.source_url ? '<a href="' + esc(node.source_url) + '" target="_blank" rel="noopener">Open source ↗</a>' : '<p class="muted">No external source URL.</p>') +
+      '<button class="secondary small" data-title="' + esc(node.label) + '" onclick="openHistoryFor(this.dataset.title)">Find in history ↗</button>';
+  } else {
+    const label = node.type === 'topic' ? 'TOPIC NODE' : (node.type === 'source' ? 'SOURCE DOMAIN' : 'CONCEPT KEYWORD');
+    const connections = g.edges.filter((e) => e.source === node.id || e.target === node.id).length;
+    body =
+      '<div class="inspector-kicker">' + label + '</div>' +
+      '<h4>' + esc(node.label) + '</h4>' +
+      '<div class="graph-stat"><span>Connections</span><b>' + connections + '</b></div>' +
+      '<p class="muted">This node is derived from stored knowledge records, not generated.</p>';
+  }
+  box.innerHTML = '<button class="inspector-close" onclick="document.getElementById(\'graphInspector\').classList.add(\'hidden\')">✕</button>' + body;
+}
+
+function graphPointerPosition(event) {
+  const canvas = $('graphCanvas');
+  const rect = canvas.getBoundingClientRect();
+  return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+}
+
+function bindGraphCanvas() {
+  const canvas = $('graphCanvas');
+  if (!canvas || canvas.dataset.bound) return;
+  canvas.dataset.bound = '1';
+  canvas.addEventListener('pointerdown', (event) => {
+    const p = graphPointerPosition(event);
+    const g = state.graph;
+    canvas.setPointerCapture(event.pointerId);
+    const hit = graphHitTest(p.x, p.y);
+    if (hit) {
+      const world = graphScreenToWorld(p.x, p.y);
+      g.dragging = { node: hit, ox: hit.x - world.x, oy: hit.y - world.y, moved: false };
+      g.hover = hit;
+    } else {
+      g.pointer = { x: p.x, y: p.y };
+    }
+    canvas.style.cursor = hit ? 'grabbing' : 'grabbing';
+  });
+  canvas.addEventListener('pointermove', (event) => {
+    const p = graphPointerPosition(event);
+    const g = state.graph;
+    if (g.dragging) {
+      const world = graphScreenToWorld(p.x, p.y);
+      g.dragging.node.x = world.x + g.dragging.ox;
+      g.dragging.node.y = world.y + g.dragging.oy;
+      g.dragging.moved = true;
+    } else if (g.pointer) {
+      g.offsetX += p.x - g.pointer.x;
+      g.offsetY += p.y - g.pointer.y;
+      g.pointer = { x: p.x, y: p.y };
+    } else {
+      g.hover = graphHitTest(p.x, p.y);
+      canvas.style.cursor = g.hover ? 'pointer' : 'grab';
+    }
+  });
+  const release = (event) => {
+    const g = state.graph;
+    try { canvas.releasePointerCapture(event.pointerId); } catch { }
+    if (g.dragging && !g.dragging.moved) selectGraphNode(g.dragging.node);
+    g.dragging = null;
+    g.pointer = null;
+    canvas.style.cursor = 'grab';
+  };
+  canvas.addEventListener('pointerup', release);
+  canvas.addEventListener('pointercancel', release);
+  canvas.addEventListener('pointerleave', () => { state.graph.hover = null; });
+  canvas.addEventListener('wheel', (event) => {
+    event.preventDefault();
+    const p = graphPointerPosition(event);
+    const g = state.graph;
+    const world = graphScreenToWorld(p.x, p.y);
+    g.scale = Math.max(0.22, Math.min(3.2, g.scale * (event.deltaY < 0 ? 1.12 : 0.89)));
+    const view = g.view || { w: 800, h: 540 };
+    g.offsetX = p.x - view.w / 2 - world.x * g.scale;
+    g.offsetY = p.y - view.h / 2 - world.y * g.scale;
+    startGraphLoop();
+  }, { passive: false });
+  canvas.style.cursor = 'grab';
+}
+
+/* --------------------------------------------------------- autonomous learning */
+function renderAutoTopics(topics) {
+  if (!$('autoTopicList')) return;
+  $('autoTopicList').innerHTML = (topics || []).slice(0, 40).map((t) => (
+    '<div class="auto-topic"><div><b>' + esc(clip(t.topic, 70)) + '</b>' +
+    '<small>' + esc(String(t.status || 'pending').toUpperCase()) + ' · priority ' + (t.priority || 5) +
+    ' · ' + esc(t.source || 'curated') + '</small></div>' +
+    '<button class="textbtn danger-text" onclick="removeAutoTopic(' + t.id + ')">Remove</button></div>'
+  )).join('') || '<div class="empty">No topics queued. Add one or let NEXUS discover a topic.</div>';
+}
+
+function renderAutoSessions(sessions) {
+  if (!$('autoSessionList')) return;
+  $('autoSessionList').innerHTML = (sessions || []).map((s) => (
+    '<div class="event auto-session"><i class="' + (s.status === 'completed' ? 'ok' : (s.status === 'failed' ? 'bad' : '')) + '"></i>' +
+    '<div><b>' + esc(clip(s.topic, 80)) + '</b><small>' +
+    esc(String(s.status || '').toUpperCase()) + ' · ' + (s.pages_learned || 0) + '/' + (s.pages_visited || 0) +
+    ' pages · +' + (s.knowledge_added || 0) + ' knowledge · ' + (s.errors || 0) + ' errors' +
+    (s.detail ? ' · ' + esc(clip(s.detail, 90)) : '') + '</small></div>' +
+    '<time>' + esc(when(s.started_at)) + '</time></div>'
+  )).join('') || '<div class="empty">No autonomous sessions yet.</div>';
+}
+
+function renderAutoStatus(data) {
+  state.auto = data;
+  const current = data.state || {};
+  const stats = data.stats || {};
+  const settings = data.settings || {};
+  if ($('autoStateTag')) $('autoStateTag').textContent = current.running ? (current.paused ? 'PAUSED' : 'LEARNING') : 'IDLE';
+  if ($('autoPhase')) $('autoPhase').textContent = String(current.phase || (current.running ? 'working' : 'idle')).toUpperCase();
+  if ($('autoTopic')) $('autoTopic').textContent = current.topic || 'No learning session';
+  if ($('autoUrl')) $('autoUrl').textContent = current.current_url || current.last_error || 'Waiting for start…';
+  if ($('autoCore')) $('autoCore').dataset.state = current.running ? (current.paused ? 'paused' : 'learning') : 'idle';
+  if ($('autoKnowledge')) $('autoKnowledge').textContent = num(stats.knowledge_auto);
+  if ($('autoSources')) $('autoSources').textContent = num(stats.sources_discovered);
+  if ($('autoPagesDone')) $('autoPagesDone').textContent = num(stats.pages_analyzed);
+  if ($('autoSessions')) $('autoSessions').textContent = num(stats.sessions_completed);
+  if ($('autoSuccess')) $('autoSuccess').textContent = (stats.success_rate || 0) + '% success';
+  if ($('autoTopics')) $('autoTopics').textContent = num(stats.topics_explored);
+  if ($('autoFailures')) $('autoFailures').textContent = num((stats.pages_failed || 0) + (stats.sessions_failed || 0));
+  if ($('autoAllowlist')) {
+    const allow = data.allowlist || [];
+    $('autoAllowlist').textContent = allow.length
+      ? 'Allowlist restricted to: ' + allow.join(', ')
+      : 'Allowlist: all public HTTPS destinations';
+  }
+  if ($('autoSpeed') && document.activeElement !== $('autoSpeed')) $('autoSpeed').value = (data.speed || {}).name || 'normal';
+  if ($('autoPages') && document.activeElement !== $('autoPages')) $('autoPages').value = settings.pages_per_session || 5;
+  renderAutoTopics(data.topics);
+  renderAutoSessions(data.sessions);
+}
+
+async function loadAutonomous() {
+  try {
+    const data = await api('/autonomous/status');
+    renderAutoStatus(data);
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+function startAutoPolling() {
+  stopAutoPolling();
+  state.autoTimer = setInterval(() => {
+    if ($('autonomous') && $('autonomous').classList.contains('active')) loadAutonomous();
+  }, 4000);
+}
+function stopAutoPolling() {
+  if (state.autoTimer) clearInterval(state.autoTimer);
+  state.autoTimer = null;
+}
+
+async function autonomousAction(action) {
+  try {
+    let body = {};
+    if (action === 'start') {
+      const topic = $('autoTopicInput') ? $('autoTopicInput').value.trim() : '';
+      body = { topic: topic || null, mode: 'topic' };
+    }
+    const data = await api('/autonomous/' + action, { method: 'POST', body: JSON.stringify(body) });
+    if (action === 'start' && $('autoTopicInput')) $('autoTopicInput').value = '';
+    toast('Autonomous learning: ' + action + '.');
+    if (data && data.state) renderAutoStatus(data);
+    loadAutonomous();
+    refresh();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function saveAutoSettings() {
+  try {
+    const payload = {
+      learning_speed: $('autoSpeed') ? $('autoSpeed').value : 'normal',
+      learning_pages_per_session: $('autoPages') ? Number($('autoPages').value) : 5
+    };
+    await api('/settings', { method: 'POST', body: JSON.stringify(payload) });
+    toast('Learning speed saved.');
+    loadAutonomous();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function addAutoTopic() {
+  const input = $('autoTopicAdd');
+  const topic = input ? input.value.trim() : '';
+  if (!topic) return toast('Type a learning topic first.', 'warn');
+  try {
+    await api('/autonomous/topics', { method: 'POST', body: JSON.stringify({ topic }) });
+    input.value = '';
+    toast('Topic queued.');
+    loadAutonomous();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function removeAutoTopic(id) {
+  try {
+    await api('/autonomous/topics/' + id, { method: 'DELETE' });
+    loadAutonomous();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function discoverTopics() {
+  try {
+    const result = await api('/autonomous/topics/discover', { method: 'POST', body: '{}' });
+    toast('Discovered: ' + ((result.created || []).join(', ') || 'no new topic'));
+    loadAutonomous();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+/* ----------------------------------------------------------- learning history */
+function historyCard(k) {
+  const verification = String(k.verification_status || 'unverified');
+  const status = verification === 'user-reported' || String(k.source_url || '').startsWith('user:')
+    ? 'USER REPORTED' : (k.source_url ? 'WEB LEARNED' : 'LOCAL / RESEARCH');
+  const full = esc(k.content || '');
+  return '<article class="knowledge-card history-card">' +
+    '<button class="delete" onclick="deleteKnowledgeHistory(' + k.id + ')">Delete</button>' +
+    '<div class="knowledge-meta">' + esc(k.topic || 'uncategorized') + ' · ' + esc(status) + ' · ' + esc(verification.toUpperCase()) + '</div>' +
+    '<h4>' + esc(k.title || 'Untitled') + '</h4>' +
+    '<p>' + esc(clip(k.content || '', 620)) + '</p>' +
+    (String(k.content || '').length > 680 ? '<details><summary class="knowledge-meta">Expand extracted text</summary><p>' + full + '</p></details>' : '') +
+    '<div class="knowledge-meta">' + esc(when(k.created_at)) + ' · confidence ' + (Number(k.confidence || 0) * 100).toFixed(0) + '%' +
+    (k.session_id ? ' · session #' + k.session_id : '') + '</div>' +
+    (k.source_url ? '<a href="' + esc(k.source_url) + '" target="_blank" rel="noopener">' + esc(clip(k.source_url, 110)) + ' ↗</a>' : '') +
+    '</article>';
+}
+
+async function loadHistory() {
+  try {
+    const params = new URLSearchParams();
+    if ($('historySearch')) params.set('q', $('historySearch').value.trim());
+    if ($('historyTopic')) params.set('topic', $('historyTopic').value);
+    if ($('historyVerification')) params.set('verification', $('historyVerification').value);
+    if ($('historyStatus')) params.set('status', $('historyStatus').value);
+    params.set('limit', '250');
+    const data = await api('/knowledge/history?' + params.toString());
+    const topicEl = $('historyTopic'), verifyEl = $('historyVerification');
+    if (topicEl) {
+      const keep = topicEl.value;
+      topicEl.innerHTML = '<option value="">All topics</option>' +
+        (data.topics || []).map((t) => '<option value="' + esc(t) + '">' + esc(t) + '</option>').join('');
+      topicEl.value = (data.topics || []).includes(keep) ? keep : '';
+    }
+    if (verifyEl) {
+      const keep = verifyEl.value;
+      verifyEl.innerHTML = '<option value="">All verification</option>' +
+        (data.verifications || []).map((v) => '<option value="' + esc(v) + '">' + esc(v) + '</option>').join('');
+      verifyEl.value = (data.verifications || []).includes(keep) ? keep : '';
+    }
+    if ($('historyCount')) $('historyCount').textContent = num(data.total) + ' RECORDS';
+    if ($('historyList')) {
+      $('historyList').innerHTML = (data.items || []).map(historyCard).join('') ||
+        '<div class="empty">No records match these filters. Learn a URL or start autonomous learning.</div>';
+    }
+  } catch (e) { toast(e.message, 'error'); }
+}
+const debouncedHistory = debounce(() => loadHistory(), 350);
+
+function openHistoryFor(title) {
+  showPage('history');
+  setTimeout(() => {
+    if ($('historySearch')) $('historySearch').value = title || '';
+    loadHistory();
+  }, 80);
+}
+
+async function deleteKnowledgeHistory(id) {
+  if (!confirm('Delete this learning record from the knowledge base?')) return;
+  try {
+    await api('/knowledge/' + id, { method: 'DELETE' });
+    toast('Record deleted.');
+    loadHistory(); refresh();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+/* ------------------------------------------------------------- system monitor */
+function monitorRow(label, value) {
+  return '<div class="graph-stat"><span>' + esc(label) + '</span><b>' + esc(value) + '</b></div>';
+}
+
+async function loadMonitor() {
+  try {
+    const [s, events] = await Promise.all([api('/status'), api('/events')]);
+    const hw = s.hardware || {};
+    const provider = s.provider || {};
+    const perms = s.permissions || {};
+    if ($('monBackend')) $('monBackend').textContent = 'ONLINE';
+    if ($('monEngine')) $('monEngine').textContent = String(provider.label || 'NEXUS CORE').toUpperCase();
+    if ($('monEngineSub')) $('monEngineSub').textContent = provider.online ? 'ready' : 'offline';
+    if ($('monKnowledge')) $('monKnowledge').textContent = num(s.knowledge_count);
+    if ($('monChunks')) $('monChunks').textContent = num(s.web_chunk_count);
+    if ($('monEvents')) $('monEvents').textContent = num(events.length);
+    if ($('monPerms')) $('monPerms').textContent = ['internet', 'pc_read', 'pc_write', 'shell'].filter((k) => perms[k]).length + '/4';
+    if ($('monHwTitle')) $('monHwTitle').textContent = (hw.ram_gb ? hw.ram_gb + ' GB RAM' : 'Hardware profile') +
+      (hw.cpu_threads ? ' · ' + hw.cpu_threads + ' threads' : '');
+    if ($('monHwText')) $('monHwText').textContent = hw.gpu || hw.recommendation || 'No GPU recommendation available.';
+    if ($('monHwGrid')) {
+      $('monHwGrid').innerHTML = Object.entries(hw).filter(([, v]) => v != null && typeof v !== 'object')
+        .slice(0, 8).map(([k, v]) => monitorRow(k.replace(/_/g, ' '), v)).join('') || '<div class="empty">No hardware data.</div>';
+    }
+    if ($('monProvider')) $('monProvider').textContent = String(provider.label || 'NEXUS CORE').toUpperCase();
+    if ($('monProviderText')) $('monProviderText').textContent = provider.detail || provider.tagline || '';
+    if ($('monProviderMeta')) {
+      $('monProviderMeta').innerHTML =
+        monitorRow('Online', provider.online ? 'yes' : 'no') +
+        monitorRow('Kind', provider.kind || 'native') +
+        monitorRow('Models', (provider.models || []).length) +
+        monitorRow('Selected', provider.selected ? 'yes' : 'no');
+    }
+    const warnings = events.filter((e) => /warning|error|failed|blocked/i.test(String(e.kind)));
+    if ($('monErrors')) $('monErrors').innerHTML = warnings.slice(0, 12).map(eventHTML).join('') ||
+      '<div class="empty">No warnings recorded.</div>';
+    if ($('monEventsList')) $('monEventsList').innerHTML = events.slice(0, 12).map(eventHTML).join('') ||
+      '<div class="empty">No events recorded.</div>';
   } catch (e) { toast(e.message, 'error'); }
 }
 
@@ -1275,7 +1934,11 @@ const SETTING_MAP = {
   sRepoKb: 'max_repo_file_kb', sRepoMb: 'max_repo_mb', sChunkLines: 'repo_chunk_lines',
   sChunkOverlap: 'repo_chunk_overlap', sLearnDepth: 'learn_depth', sLearnLinks: 'learn_max_links',
   sWebChars: 'web_chunk_chars', sWebOverlap: 'web_chunk_overlap', sWebPages: 'max_web_pages',
-  sSkillContext: 'skills_auto_context', sSkillsRepo: 'skills_repo'
+  sSkillContext: 'skills_auto_context', sSkillsRepo: 'skills_repo',
+  sLearningSpeed: 'learning_speed', sLearningPages: 'learning_pages_per_session',
+  sLearningInterval: 'learning_session_interval_seconds', sLearningRandom: 'learning_random',
+  sLearningVerify: 'learning_auto_verify', sLearningResume: 'learning_resume',
+  sLearningTopics: 'learning_topics'
 };
 async function loadSettings() {
   try {
@@ -1283,7 +1946,8 @@ async function loadSettings() {
     Object.entries(SETTING_MAP).forEach(([id, key]) => {
       const el = $(id);
       if (!el) return;
-      if (key === 'auto_resume' || key === 'skills_auto_context') {
+      if (['auto_resume', 'skills_auto_context', 'learning_random', 'learning_auto_verify',
+           'learning_resume'].includes(key)) {
         el.value = String(s[key]).toLowerCase() === 'true' ? 'true' : 'false';
       } else {
         el.value = s[key] != null ? s[key] : '';
@@ -1302,13 +1966,15 @@ async function saveSettings() {
     const numeric = new Set(['num_ctx', 'num_predict', 'num_thread', 'chat_history', 'max_pages_per_task',
       'deep_research_pages', 'request_delay_seconds', 'research_interval_seconds', 'verification_sources',
       'max_repo_files', 'max_repo_file_kb', 'max_repo_mb', 'repo_chunk_lines', 'repo_chunk_overlap',
-      'learn_depth', 'learn_max_links', 'web_chunk_chars', 'web_chunk_overlap', 'max_web_pages']);
+      'learn_depth', 'learn_max_links', 'web_chunk_chars', 'web_chunk_overlap', 'max_web_pages',
+      'learning_pages_per_session', 'learning_session_interval_seconds']);
+    const booleans = new Set(['auto_resume', 'skills_auto_context', 'learning_random',
+      'learning_auto_verify', 'learning_resume']);
     const payload = {};
     Object.entries(SETTING_MAP).forEach(([id, key]) => {
       const el = $(id);
       if (!el) return;
-      if (key === 'auto_resume') payload[key] = el.value === 'true';
-      else if (key === 'skills_auto_context') payload[key] = el.value === 'true';
+      if (booleans.has(key)) payload[key] = el.value === 'true';
       else if (numeric.has(key)) payload[key] = Number(el.value);
       else payload[key] = el.value;
     });
@@ -1364,6 +2030,9 @@ function initMatrix() {
 /* -------------------------------------------------------------- websockets */
 let socket = null;
 const wsRefresh = debounce(() => refresh(), 900);
+const autoLiveRefresh = debounce(() => {
+  if ($('autonomous') && $('autonomous').classList.contains('active')) loadAutonomous();
+}, 1400);
 function connectWS() {
   try {
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
@@ -1374,6 +2043,9 @@ function connectWS() {
       const html = eventHTML(value);
       if ($('liveEvents')) $('liveEvents').insertAdjacentHTML('afterbegin', html);
       if ($('allEvents')) $('allEvents').insertAdjacentHTML('afterbegin', html);
+      if (/warning|error|failed|blocked/i.test(String(value.kind))) pulseCore('error');
+      else if (/learning|discovery|verification|knowledge|web|repo|skills/i.test(String(value.kind))) pulseCore('knowledge');
+      if (String(value.kind || '').match(/learning|discovery|verification|web/)) autoLiveRefresh();
       wsRefresh();
     };
     socket.onclose = () => setTimeout(connectWS, 4000);
@@ -1444,8 +2116,13 @@ function init() {
   });
 
   initChatRepoSelect();
+  bindGraphCanvas();
   initMatrix();
   connectWS();
+
+  window.addEventListener('resize', debounce(() => {
+    if (state.graph.active) startGraphLoop();
+  }, 200));
 
   $('footerTime').textContent = new Date().toLocaleDateString();
   const sideVersion = $('sideVersion');
@@ -1457,6 +2134,7 @@ function init() {
   });
   setInterval(refresh, 8000);
   setInterval(() => { if ($('activity').classList.contains('active')) loadEvents(); }, 12000);
+  setInterval(() => { if ($('monitor') && $('monitor').classList.contains('active')) loadMonitor(); }, 12000);
 }
 
 document.addEventListener('DOMContentLoaded', init);
