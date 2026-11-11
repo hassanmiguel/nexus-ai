@@ -43,6 +43,15 @@
 - [x] Two-stage repo retrieval (keyword SQL prefilter + lexical shortlist + semantic rerank) for 10k+ chunk indexes
 - [x] Cached skill vectors; warm skill retrieval drops to well under 100 ms
 
+### Program Forge / Code Studio
+- [x] 38 curated offline program templates across Python, JavaScript, PowerShell, HTML and SQL
+- [x] Real write → verify → persist pipeline with sanitized paths and size caps under `data/programs`
+- [x] In-process Python compilation, `node --check` for JavaScript, and template self-tests
+- [x] Verified status only when checks actually pass; model output is syntax-checked and never auto-run
+- [x] Local-model code generation through Ollama, llama.cpp or OpenAI-compatible providers
+- [x] Program library, file viewer, verification report, explicit run with arguments, sandboxed HTML preview and delete
+- [x] Chat code-creation intent that forges a program and reports real verification evidence
+
 ### Permissions and tools
 - [x] Closed-by-default capability gate: internet, pc_read, pc_write, shell
 - [x] Allowed-root path restriction and optional command allow-list
@@ -65,10 +74,11 @@
 ### Interface
 - [x] Full code/cyber-themed rewrite: terminal aesthetic, matrix/grid background
 - [x] Animated NEXUS core sphere with four orbital rings and scan line
-- [x] Pages: Overview, Repo Lab, URL Learn, Skills, AI Chat, Auto Research, Knowledge, Memory, Graph, Tasks, Activity, Experiments, Analytics, Providers, Permissions, Settings
+- [x] Pages: Overview, Repo Lab, URL Learn, Skills, AI Chat, Code Studio, Auto Research, Knowledge, Memory, Graph, Tasks, Activity, Experiments, Analytics, Providers, Permissions, Settings
 - [x] Provider switcher, live WebSocket activity stream, toasts, responsive layout
 - [x] Dashboard views for memory, topic clusters, proposals, experiments and analytics
 - [x] URL Learn and Skill Vault pages with progress polling, packs, search, detail inspectors and toggles
+- [x] Code Studio page with request/template matching, program library, file tabs, verification report, run output and HTML preview
 
 ## Remaining engineering work
 

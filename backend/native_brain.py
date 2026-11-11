@@ -81,6 +81,16 @@ def _skill_summary():
         return 'skill vault loading'
 
 
+def _forge_summary():
+    try:
+        from . import programmer
+        info = programmer.status()
+        return (f'{info["total"]} written · {info["verified"]} verified · '
+                f'{info["recipes"]} offline templates')
+    except Exception:
+        return 'offline templates + local model codegen'
+
+
 def capabilities_text():
     return (
         f'**NEXUS CORE // {NEXUS_MODEL}**\n\n'
@@ -88,6 +98,8 @@ def capabilities_text():
         '- **Repo learning:** paste a GitHub URL or local folder in Repo Lab; NEXUS indexes files, symbols and line-addressed chunks into SQLite.\n'
         '- **URL learning:** paste a public HTTPS page in URL Learn; NEXUS extracts, chunks and remembers it (permission-gated, robots.txt enforced).\n'
         '- **Skill vault:** 300+ Antigravity skills for API design, debugging, security, Python, data, AI and more — seeded offline and importable from GitHub.\n'
+        '- **Program Forge / Code Studio:** ask me to build a program and I write real files, verify them with self-tests, then run them on request. '
+        f'Current library: {_forge_summary()}.\n'
         '- **Offline answers:** this mode retrieves from what NEXUS has learned (no Ollama, no API key).\n'
         '- **Generative providers:** switch to Ollama, llama.cpp/GGUF or any OpenAI-compatible server from the top bar.\n'
         '- **Research agent:** plan → crawl → extract → verify → store → evaluate.\n'
@@ -374,6 +386,93 @@ def _pure_greeting(question):
     return bool(GREETINGS.match(text)) and len(text.split()) <= 4
 
 
+PROGRAM_NOUN = (
+    r'(?:program|script|application|app|game|website|web\s*page|web\s*app|cli|'
+    r'command[- ]line\s+(?:tool|app)|tool|api|server|bot|scraper|crawler|calculator|'
+    r'converter|tracker|dashboard|portfolio|automation|parser|database|'
+    r'chat\s*(?:server|app)|todo\s*(?:list|app)?|timer|scanner|organizer|analyzer|monitor)'
+)
+CODE_CREATE = re.compile(
+    r'\b(?:write|create|build|make|generate|implement|develop|code|scaffold|program)\b'
+    r'[^.!?\n]{0,90}\b' + PROGRAM_NOUN + r'\b'
+    r'|\b(?:i\s+(?:want|need)|help\s+me\s+(?:make|build|write|create)|'
+    r'can\s+you\s+(?:make|build|write|create|code|program))\b'
+    r'[^.!?\n]{0,90}\b' + PROGRAM_NOUN + r'\b'
+    r'|\b(?:program|script|app|game)\s+that\b',
+    re.I)
+EXPLAIN_REQUEST = re.compile(
+    r'^\s*(?:how\s+(?:do|does|can|would|to|should)|what\s+(?:is|are|does)|'
+    r'why\b|explain\b|describe\b|tell\s+me\s+about\b|when\s+(?:do|should)|'
+    r'where\s+(?:do|can))', re.I)
+NON_CODE_WRITING = re.compile(
+    r'\b(?:blog|essay|poem|story|tweet|email|letter|resume|cover letter|article|novel|song)\b',
+    re.I)
+SUPPORT_REQUEST = re.compile(
+    r'\b(?:help\s+(?:me\s+)?with|debug|fix\s+(?:my|this|the)|error\s+in|'
+    r'problem\s+with|why\s+is|why\s+does)\b', re.I)
+
+
+def _code_intent(text):
+    text = (text or '').strip()
+    if not text or EXPLAIN_REQUEST.match(text):
+        return False
+    if NON_CODE_WRITING.search(text) and not re.search(
+            r'\b(?:program|code|script|software)\b', text, re.I):
+        return False
+    if SUPPORT_REQUEST.search(text) and not re.search(
+            r'\b(?:build|create|write|make|generate)\b', text, re.I):
+        return False
+    return bool(CODE_CREATE.search(text))
+
+
+async def _forge_reply(question):
+    from . import programmer
+    try:
+        program = await programmer.forge(question)
+    except programmer.GenerationError as exc:
+        return (
+            'I can write programs, but I will not pretend I built this one.\n\n'
+            f'**Why not:** {exc}\n\n'
+            'What I can do right now:\n'
+            '- Write one of my built-in programs — calculator, guessing game, todo list, '
+            'expense tracker, password generator, unit converter, timer, file organizer, '
+            'duplicate finder, backup script, log analyzer, CSV summary, web scraper, '
+            'REST API, static website, Node calculator, SQLite demo, PowerShell file report, '
+            'snake game, JSON tool, port scanner, Markdown converter, weather CLI, word count, '
+            'chat server, or an algorithm snippet.\n'
+            '- Use a local model for anything else. Start Ollama and keep **Codegen provider** '
+            'on `auto` in Settings, then ask again.\n'
+            '- Browse the templates in **Code Studio** to see exact examples.'
+        )
+    files = program.get('files') or []
+    lines = [f'**Program written: {program["name"]}**', '']
+    lines.append(f'- **Language / kind:** {program["language"]} · {program["kind"]}')
+    lines.append('- **Files:** ' + ', '.join(f'`{name}`' for name in files))
+    lines.append(f'- **Workspace:** `{program["directory"]}`')
+    if program.get('source') == 'recipe':
+        lines.append('- **Source:** offline recipe — a curated, complete program.')
+    else:
+        lines.append(f'- **Source:** model-generated ({program.get("generator", "local model")}).')
+    if program.get('verified'):
+        lines.append('- **Verification:** self-tests passed. The program really ran and produced the expected output.')
+    elif program.get('status') == 'checks_failed':
+        lines.append('- **Verification:** some self-tests failed. The files are saved, but review them before relying on this.')
+    elif program.get('source') == 'model':
+        lines.append('- **Verification:** syntax-checked only. NEXUS did not execute model-generated code.')
+    else:
+        lines.append(f'- **Verification:** {program.get("status", "unverified")}.')
+    if program.get('run'):
+        lines.append(f'- **Run it with:** `{program["run"]}`')
+    lines.append('')
+    lines.append('Verification report:')
+    lines.append('```')
+    lines.append(clip(program.get('verification') or '', 2000))
+    lines.append('```')
+    lines.append('')
+    lines.append(f'Open **Code Studio** to read the files, re-verify or run it (program #{program["id"]}).')
+    return '\n'.join(lines)
+
+
 async def answer(question, extra_context='', history=None):
     question = (question or '').strip()
     low = question.lower()
@@ -410,6 +509,8 @@ async def answer(question, extra_context='', history=None):
         return 'You are welcome. Ask me anything else, or teach me a new page or repository and I will remember it.'
     if BYE.match(low) and len(question) <= 80:
         return 'Goodbye for now. Your knowledge, repositories, web pages and skills stay on disk until next time.'
+    if _code_intent(question):
+        return await _forge_reply(question)
     if IDENTITY.search(low):
         return _identity_text()
     if CAPABILITIES.search(low):

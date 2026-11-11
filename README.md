@@ -71,6 +71,19 @@ The **Skills** page ships an offline vault of **307 skills** from the Antigravit
 - re-import the latest vault from GitHub (`rmyndharis/antigravity-skills`) when internet is enabled
 - matching skills are injected into chat as reference guidance only, never as higher-priority instructions
 
+## Write, verify and run programs (Code Studio)
+
+**Code Studio** is a real program forge, not a mock dashboard. Ask for a program in chat or on the page:
+
+- NEXUS first matches the request against **38 offline templates** across Python, JavaScript, PowerShell, HTML and SQL. Templates are complete, runnable programs with built-in self-tests.
+- If no template matches, NEXUS can ask a local generative provider (Ollama, llama.cpp/GGUF or an OpenAI-compatible server) for a small program. That output is syntax-checked and labelled **model-generated**; NEXUS never auto-executes it.
+- Every generated program is written to `data/programs/<slug>/` inside the app workspace. File names are sanitized, each file is size-capped, and paths cannot escape that folder.
+- Verification is evidence-based: Python is compiled in-process, JavaScript is checked with `node --check` when available, and template self-tests must actually exit 0. A program is marked **verified** only when those checks pass.
+- Read every file in the built-in viewer, re-run verification, run the program with arguments, preview HTML in a sandboxed iframe, download files, or delete the program.
+- Running a program requires the **Run shell commands** permission and is always an explicit action. There is no automatic execution of model output.
+
+Use the **Codegen model** selector to choose a provider for one generation, or set `codegen_provider` in Settings to `auto`, `off`, `ollama`, `llamacpp` or `openai`. Timeouts are configurable with `code_exec_timeout`.
+
 ## Permission-gated internet and PC access
 
 NEXUS cannot touch the internet or your PC unless you explicitly grant it in **Permissions**. All four capabilities are **closed by default**:
@@ -109,7 +122,8 @@ Tool console and history are on the Permissions page. Tool runs return structure
 13. **Code-themed UI** — animated NEXUS core with orbital rings, matrix/grid background, terminal aesthetic, responsive layout.
 14. **URL learning** — robots-respecting web-page ingest with starter packs, chunk storage, search and per-page delete.
 15. **Skill vault** — 307 offline Antigravity skills plus permission-gated GitHub refresh, bundles, toggles and chat guidance.
-16. **Scalable retrieval** — two-stage lexical shortlist plus semantic rerank keeps chat fast as the repo index grows past 10,000 chunks; skill vectors are cached.
+16. **Program Forge / Code Studio** — 38 offline runnable templates, evidence-based self-test verification, local-model code generation, file viewer, sandboxed HTML preview and explicit program runs.
+17. **Scalable retrieval** — two-stage lexical shortlist plus semantic rerank keeps chat fast as the repo index grows past 10,000 chunks; skill vectors are cached.
 
 ## Research safety and limits
 
@@ -165,6 +179,9 @@ pip install llama-cpp-python
 - `GET /api/memory`, `DELETE /api/memory/{id}`, `POST /api/search`
 - `GET /api/claims`, `GET /api/evaluations`, `GET /api/events`
 - `GET /api/proposals`, `POST /api/proposals/{id}/decision`, `POST /api/proposals/{id}/sandbox-test`
+- `GET /api/programs`, `GET /api/programs/recipes`, `POST /api/programs/detect`, `POST /api/programs/generate`
+- `GET|DELETE /api/programs/{id}`, `GET /api/programs/{id}/file?name=...`, `GET /api/programs/{id}/raw/{name}`
+- `POST /api/programs/{id}/verify`, `POST /api/programs/{id}/run`
 - `GET /api/experiments`, `GET|POST /api/settings`
 - `GET /api/tools`, `POST /api/tools/run`, `GET|POST /api/permissions`, `GET /api/audit`, `GET /api/tool-runs`
 - `WS /ws`

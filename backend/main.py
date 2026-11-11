@@ -1,6 +1,7 @@
 import asyncio
 import ast
 import json
+import mimetypes
 import pathlib
 import platform
 import tempfile
@@ -33,6 +34,8 @@ from . import skills as skill_vault
 from . import web_learn
 from . import autonomous
 from . import knowledge_graph
+from . import programmer
+from . import recipes as program_recipes
 
 app = FastAPI(title='NEXUS AI', version=APP_VERSION)
 app.add_middleware(
@@ -53,6 +56,7 @@ SETTINGS_KEYS = [
     'skills_auto_context', 'skills_repo',
     'learning_speed', 'learning_pages_per_session', 'learning_topics', 'learning_random',
     'learning_auto_verify', 'learning_resume', 'learning_session_interval_seconds',
+    'codegen_provider', 'code_exec_timeout',
 ]
 
 
@@ -112,6 +116,18 @@ class Settings(BaseModel):
     learning_auto_verify: bool | None = None
     learning_resume: bool | None = None
     learning_session_interval_seconds: int | None = Field(default=None, ge=30, le=3600)
+    codegen_provider: str | None = Field(default=None, pattern='^(auto|off|nexus|ollama|llamacpp|openai)$')
+    code_exec_timeout: int | None = Field(default=None, ge=5, le=120)
+
+
+class ProgramRequest(BaseModel):
+    request: str = Field(min_length=3, max_length=4000)
+    recipe_id: str | None = Field(default=None, max_length=120)
+    provider: str | None = Field(default=None, pattern='^(nexus|ollama|llamacpp|openai)$')
+
+
+class ProgramRun(BaseModel):
+    args: list[str] = Field(default_factory=list, max_length=20)
 
 
 class ProposalDecision(BaseModel):
@@ -820,6 +836,109 @@ async def audit_list(limit: int = 120):
 @app.get('/api/tool-runs')
 async def tool_run_list(limit: int = 80):
     return recent_tool_runs(limit)
+
+
+# --------------------------------------------------------------------------- #
+# Program Forge
+# --------------------------------------------------------------------------- #
+@app.get('/api/programs')
+async def programs_list(limit: int = 80):
+    return {'programs': programmer.list_programs(limit), 'status': programmer.status()}
+
+
+@app.get('/api/programs/recipes')
+async def programs_recipes():
+    return {'recipes': program_recipes.catalog(), 'languages': program_recipes.languages(),
+            'status': programmer.status()}
+
+
+@app.post('/api/programs/detect')
+async def programs_detect(body: ProgramRequest):
+    return {'matches': program_recipes.detect(body.request, 5),
+            'codegen_provider': await programmer.resolve_codegen_provider()}
+
+
+@app.post('/api/programs/generate')
+async def programs_generate(body: ProgramRequest):
+    try:
+        record = await programmer.forge(body.request, recipe_id=body.recipe_id, provider=body.provider)
+    except programmer.GenerationError as exc:
+        raise HTTPException(400, str(exc))
+    return {'ok': True, 'program': record}
+
+
+@app.get('/api/programs/{program_id}')
+async def program_detail(program_id: int):
+    record = programmer.get_program(program_id)
+    if not record:
+        raise HTTPException(404, 'Program not found.')
+    return record
+
+
+@app.delete('/api/programs/{program_id}')
+async def program_delete(program_id: int):
+    try:
+        programmer.delete_program(program_id)
+    except LookupError as exc:
+        raise HTTPException(404, str(exc))
+    return {'ok': True, 'deleted': program_id}
+
+
+@app.get('/api/programs/{program_id}/file')
+async def program_read_file(program_id: int, name: str):
+    try:
+        safe, text = programmer.read_program_file(program_id, name)
+    except LookupError as exc:
+        raise HTTPException(404, str(exc))
+    except FileNotFoundError as exc:
+        raise HTTPException(404, f'File not found: {exc}')
+    except (ValueError, programmer.GenerationError) as exc:
+        raise HTTPException(400, str(exc))
+    return {'name': safe, 'content': text}
+
+
+@app.get('/api/programs/{program_id}/raw/{name:path}')
+async def program_raw_file(program_id: int, name: str):
+    try:
+        safe, text = programmer.read_program_file(program_id, name)
+    except LookupError as exc:
+        raise HTTPException(404, str(exc))
+    except FileNotFoundError as exc:
+        raise HTTPException(404, f'File not found: {exc}')
+    except (ValueError, programmer.GenerationError) as exc:
+        raise HTTPException(400, str(exc))
+    media = mimetypes.guess_type(safe)[0] or 'text/plain'
+    if media.startswith('text/') or media in ('application/javascript', 'application/json'):
+        media += '; charset=utf-8'
+    return Response(content=text.encode('utf-8'), media_type=media,
+                    headers={'X-Content-Type-Options': 'nosniff',
+                             'Content-Security-Policy': "sandbox allow-scripts; default-src 'none'; "
+                                                        "style-src 'unsafe-inline'; img-src data:; "
+                                                        "script-src 'unsafe-inline'"})
+
+
+@app.post('/api/programs/{program_id}/run')
+async def program_run(program_id: int, body: ProgramRun):
+    try:
+        result = await asyncio.to_thread(programmer.run_program, program_id, body.args)
+    except LookupError as exc:
+        raise HTTPException(404, str(exc))
+    except programmer.ExecutionBlocked as exc:
+        raise HTTPException(403, str(exc))
+    except programmer.GenerationError as exc:
+        raise HTTPException(400, str(exc))
+    return result
+
+
+@app.post('/api/programs/{program_id}/verify')
+async def program_verify(program_id: int):
+    try:
+        record = await asyncio.to_thread(programmer.verify_program, program_id)
+    except LookupError as exc:
+        raise HTTPException(404, str(exc))
+    except programmer.GenerationError as exc:
+        raise HTTPException(400, str(exc))
+    return record
 
 
 # --------------------------------------------------------------------------- #

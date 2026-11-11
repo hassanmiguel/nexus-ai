@@ -28,23 +28,24 @@
     <nav id="nav">
       <button class="nav active" data-page="overview"><i>◈</i><span>Overview</span><b>01</b></button>
       <button class="nav" data-page="chat"><i>▸</i><span>Nexus Core</span><b>02</b></button>
-      <button class="nav" data-page="autonomous"><i>◉</i><span>Autonomous Learning</span><b>03</b></button>
-      <button class="nav" data-page="urllearn"><i>⇲</i><span>URL Learn</span><b>04</b></button>
-      <button class="nav" data-page="repos"><i>⌥</i><span>Repo Lab</span><b>05</b></button>
-      <button class="nav" data-page="graph"><i>⌘</i><span>Knowledge Graph</span><b>06</b></button>
-      <button class="nav" data-page="history"><i>▦</i><span>Learning History</span><b>07</b></button>
-      <button class="nav" data-page="memory"><i>◌</i><span>Memory</span><b>08</b></button>
-      <button class="nav" data-page="knowledge"><i>▤</i><span>Knowledge</span><b>09</b></button>
-      <button class="nav" data-page="skills"><i>✦</i><span>Skills</span><b>10</b></button>
-      <button class="nav" data-page="learning"><i>⌁</i><span>Auto Research</span><b>11</b></button>
-      <button class="nav" data-page="tasks"><i>☷</i><span>Tasks</span><b>12</b></button>
-      <button class="nav" data-page="activity"><i>⌗</i><span>Activity</span><b>13</b></button>
-      <button class="nav" data-page="monitor"><i>◫</i><span>System Monitor</span><b>14</b></button>
-      <button class="nav" data-page="experiments"><i>⚗</i><span>Experiments</span><b>15</b></button>
-      <button class="nav" data-page="analytics"><i>▥</i><span>Analytics</span><b>16</b></button>
-      <button class="nav" data-page="models"><i>⬡</i><span>Providers</span><b>17</b></button>
-      <button class="nav" data-page="permissions"><i>⌂</i><span>Permissions</span><b>18</b></button>
-      <button class="nav" data-page="settings"><i>⚙</i><span>Settings</span><b>19</b></button>
+      <button class="nav" data-page="programs"><i>⌬</i><span>Code Studio</span><b>03</b></button>
+      <button class="nav" data-page="autonomous"><i>◉</i><span>Autonomous Learning</span><b>04</b></button>
+      <button class="nav" data-page="urllearn"><i>⇲</i><span>URL Learn</span><b>05</b></button>
+      <button class="nav" data-page="repos"><i>⌥</i><span>Repo Lab</span><b>06</b></button>
+      <button class="nav" data-page="graph"><i>⌘</i><span>Knowledge Graph</span><b>07</b></button>
+      <button class="nav" data-page="history"><i>▦</i><span>Learning History</span><b>08</b></button>
+      <button class="nav" data-page="memory"><i>◌</i><span>Memory</span><b>09</b></button>
+      <button class="nav" data-page="knowledge"><i>▤</i><span>Knowledge</span><b>10</b></button>
+      <button class="nav" data-page="skills"><i>✦</i><span>Skills</span><b>11</b></button>
+      <button class="nav" data-page="learning"><i>⌁</i><span>Auto Research</span><b>12</b></button>
+      <button class="nav" data-page="tasks"><i>☷</i><span>Tasks</span><b>13</b></button>
+      <button class="nav" data-page="activity"><i>⌗</i><span>Activity</span><b>14</b></button>
+      <button class="nav" data-page="monitor"><i>◫</i><span>System Monitor</span><b>15</b></button>
+      <button class="nav" data-page="experiments"><i>⚗</i><span>Experiments</span><b>16</b></button>
+      <button class="nav" data-page="analytics"><i>▥</i><span>Analytics</span><b>17</b></button>
+      <button class="nav" data-page="models"><i>⬡</i><span>Providers</span><b>18</b></button>
+      <button class="nav" data-page="permissions"><i>⌂</i><span>Permissions</span><b>19</b></button>
+      <button class="nav" data-page="settings"><i>⚙</i><span>Settings</span><b>20</b></button>
     </nav>
 
     <div class="sidebar-bottom">
@@ -347,6 +348,74 @@
             <span>ENTER send · SHIFT+ENTER newline</span>
             <span id="chatRepoBadge" class="tag hidden">REPO CONTEXT</span>
             <button class="textbtn" onclick="toggleRepoContext()">Pin repo context</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- CODE STUDIO -->
+    <section id="programs" class="page">
+      <div class="sectionintro">
+        <div><div class="eyebrow cyan">PROGRAM FORGE</div><h2>Code Studio</h2><p>Ask NEXUS to write a real program. Offline templates are complete and carry self-tests; a program is only marked verified when those tests actually pass. Other requests go to a local model, are syntax-checked, and are never executed automatically.</p></div>
+        <div class="row-actions"><span class="tag" id="progCountTag">0 PROGRAMS</span><span class="tag" id="progProviderTag">CODEGEN AUTO</span><span class="tag" id="progShellTag">SHELL ?</span></div>
+      </div>
+      <div class="program-layout">
+        <div class="panel">
+          <div class="panelhead"><div><label>BUILD</label><h3>Describe a program</h3></div><span class="tag">REAL FILES</span></div>
+          <div class="form-grid">
+            <label>WHAT SHOULD IT DO?</label>
+            <textarea id="programRequest" rows="4" placeholder="e.g. write a Python program that checks if a word is a palindrome" oninput="debouncedProgramDetect()"></textarea>
+            <div class="two-col">
+              <div><label>OFFLINE TEMPLATE</label><select id="programRecipe" onchange="applyRecipeSelection()"><option value="">Auto-detect</option></select></div>
+              <div><label>CODEGEN MODEL</label><select id="programProvider">
+                <option value="">Use setting (auto)</option>
+                <option value="ollama">Ollama</option>
+                <option value="llamacpp">llama.cpp / GGUF</option>
+                <option value="openai">OpenAI-compatible</option>
+              </select></div>
+            </div>
+            <button class="primary full" id="programBuildBtn" onclick="forgeProgram()">⌬ Write program</button>
+            <p class="muted">Templates write to app-owned <code>data/programs</code>. Running a program needs the <b>Run shell commands</b> permission. Nothing is sent anywhere unless you choose a remote provider.</p>
+          </div>
+          <div id="programProgress" class="repo-progress hidden"></div>
+          <div class="panelhead" style="margin-top:16px"><div><label>DETECTED TEMPLATES</label><h3>What matches your request</h3></div></div>
+          <div id="programMatches" class="chip-row"><div class="empty">Type a request to see matching templates.</div></div>
+          <div class="panelhead" style="margin-top:16px"><div><label>OFFLINE LIBRARY</label><h3>Runnable templates</h3></div><button class="textbtn" onclick="loadProgramRecipes()">Reload ↻</button></div>
+          <div id="programRecipes" class="chip-row"><div class="empty">Loading templates…</div></div>
+        </div>
+        <div class="panel">
+          <div class="panelhead"><div><label>LIBRARY</label><h3>Written programs</h3></div><button class="textbtn" onclick="loadPrograms()">Refresh ↻</button></div>
+          <div id="programList" class="program-list"><div class="empty">No programs yet. Write one on the left.</div></div>
+        </div>
+      </div>
+      <div class="panel hidden" id="programDetail">
+        <div class="panelhead">
+          <div><label>PROGRAM</label><h3 id="programDetailName">—</h3><small id="programDetailMeta" class="muted"></small></div>
+          <div class="row-actions">
+            <span class="tag" id="programStatusTag">—</span>
+            <button class="secondary small" onclick="verifyProgram()">Verify</button>
+            <button class="secondary small" onclick="runProgram()">▶ Run</button>
+            <button class="secondary small" onclick="previewProgram()" id="programPreviewBtn">Preview</button>
+            <button class="danger small" onclick="deleteProgram()">Delete</button>
+            <button class="textbtn" onclick="closeProgram()">Close ✕</button>
+          </div>
+        </div>
+        <div class="program-detail-grid">
+          <div>
+            <div id="programFiles" class="program-files"></div>
+            <div class="code-viewer">
+              <div class="code-head"><span id="programFilePath">Select a file</span><div class="row-actions"><button class="textbtn" onclick="copyProgramCode()">Copy</button><button class="textbtn" onclick="downloadProgramFile()">Download</button></div></div>
+              <pre id="programCode" class="code-block">// file content appears here</pre>
+            </div>
+            <div id="programPreview" class="program-preview hidden"><iframe id="programPreviewFrame" title="Program preview"></iframe></div>
+          </div>
+          <div>
+            <label>VERIFICATION REPORT</label>
+            <pre id="programVerification" class="code-block">—</pre>
+            <label style="display:block;margin-top:12px">RUN ARGUMENTS</label>
+            <div class="searchrow" style="margin-top:6px"><input id="programArgs" placeholder="space-separated arguments"><button class="primary small" onclick="runProgram()">Run</button></div>
+            <label style="display:block;margin-top:12px">OUTPUT</label>
+            <pre id="programOutput" class="code-block tool-output">—</pre>
           </div>
         </div>
       </div>
@@ -705,6 +774,23 @@
             <label>CHUNK OVERLAP LINES</label><input id="sChunkOverlap" type="number" min="0" max="100">
             <button class="primary" onclick="saveSettings()">Save configuration</button>
             <p class="muted">Crawling respects robots.txt and domain restrictions. Repository indexing is read-only and size-capped.</p>
+          </div>
+        </div>
+        <div class="panel">
+          <label>PROGRAM FORGE</label><h3>Code generation</h3>
+          <div class="form-grid">
+            <label>CODEGEN PROVIDER</label>
+            <select id="sCodegenProvider">
+              <option value="auto">Auto — first online local provider</option>
+              <option value="off">Off — offline recipes only</option>
+              <option value="ollama">Ollama</option>
+              <option value="llamacpp">llama.cpp / GGUF</option>
+              <option value="openai">OpenAI-compatible</option>
+            </select>
+            <label>PROGRAM RUN TIMEOUT (S)</label>
+            <input id="sCodeExecTimeout" type="number" min="5" max="120">
+            <button class="primary" onclick="saveSettings()">Save configuration</button>
+            <p class="muted">Offline templates always work. Model-generated programs are syntax-checked, labelled unverified and never executed automatically. Running any program still needs the shell permission.</p>
           </div>
         </div>
         <div class="panel">

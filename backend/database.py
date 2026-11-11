@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS skills(id INTEGER PRIMARY KEY AUTOINCREMENT,skill_id 
 CREATE TABLE IF NOT EXISTS skill_imports(id INTEGER PRIMARY KEY AUTOINCREMENT,source TEXT NOT NULL,status TEXT DEFAULT 'queued',imported INTEGER DEFAULT 0,skipped INTEGER DEFAULT 0,detail TEXT DEFAULT '',created_at TEXT NOT NULL,updated_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS learning_sessions(id INTEGER PRIMARY KEY AUTOINCREMENT,topic TEXT NOT NULL,mode TEXT DEFAULT 'topic',status TEXT DEFAULT 'running',started_at TEXT NOT NULL,updated_at TEXT NOT NULL,finished_at TEXT,pages_visited INTEGER DEFAULT 0,pages_learned INTEGER DEFAULT 0,knowledge_added INTEGER DEFAULT 0,errors INTEGER DEFAULT 0,detail TEXT DEFAULT '');
 CREATE TABLE IF NOT EXISTS learning_topics(id INTEGER PRIMARY KEY AUTOINCREMENT,topic TEXT UNIQUE NOT NULL,status TEXT DEFAULT 'pending',priority INTEGER DEFAULT 5,source TEXT DEFAULT 'curated',created_at TEXT NOT NULL,updated_at TEXT NOT NULL,last_learned_at TEXT,attempts INTEGER DEFAULT 0,detail TEXT DEFAULT '');
+CREATE TABLE IF NOT EXISTS programs(id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT NOT NULL,slug TEXT NOT NULL,request TEXT NOT NULL,language TEXT DEFAULT 'python',kind TEXT DEFAULT 'script',summary TEXT DEFAULT '',directory TEXT NOT NULL,entry TEXT DEFAULT '',files TEXT DEFAULT '[]',source TEXT DEFAULT 'recipe',generator TEXT DEFAULT '',status TEXT DEFAULT 'generated',verified INTEGER DEFAULT 0,verification TEXT DEFAULT '',last_run TEXT DEFAULT '',last_output TEXT DEFAULT '',last_exit INTEGER DEFAULT 0,created_at TEXT NOT NULL,updated_at TEXT NOT NULL);
 '''
 
 INDEXES = '''
@@ -55,6 +56,7 @@ CREATE INDEX IF NOT EXISTS idx_skills_category ON skills(category);
 CREATE INDEX IF NOT EXISTS idx_skills_enabled ON skills(enabled);
 CREATE INDEX IF NOT EXISTS idx_learning_sessions_status ON learning_sessions(status);
 CREATE INDEX IF NOT EXISTS idx_learning_topics_status ON learning_topics(status);
+CREATE INDEX IF NOT EXISTS idx_programs_created ON programs(id);
 '''
 
 # Every value used by the UI/backend. Keeping them in one place makes upgrades safe.
@@ -106,6 +108,9 @@ DEFAULTS = {
     'learning_random': 'true',
     'learning_session_interval_seconds': '120',
     'learning_auto_verify': 'true',
+    # program forge -------------------------------------------------------------
+    'codegen_provider': 'auto',
+    'code_exec_timeout': '20',
     # skills (antigravity vault) ------------------------------------------------
     'skills_auto_context': 'true',
     'skills_seed_version': '',

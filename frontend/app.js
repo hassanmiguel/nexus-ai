@@ -6,7 +6,7 @@ const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
 const titles = {
   overview: 'Command Center', repos: 'Repository Lab', urllearn: 'URL Learn',
-  skills: 'Skill Vault', chat: 'Nexus Core',
+  skills: 'Skill Vault', chat: 'Nexus Core', programs: 'Code Studio',
   autonomous: 'Autonomous Learning',
   learning: 'Autonomous Research', knowledge: 'Knowledge Base', memory: 'Memory Manager',
   graph: 'Knowledge Graph', history: 'Learning History', tasks: 'Task Manager',
@@ -22,7 +22,9 @@ const state = {
   webSources: [], currentWeb: null, skills: [], currentSkill: null, skillMeta: null,
   auto: null, autoTimer: null, lastEventId: 0, coreTimer: null,
   graph: { nodes: [], edges: [], stats: null, scale: 1, offsetX: 0, offsetY: 0,
-           dragging: null, pointer: null, hover: null, selected: null, active: false }
+           dragging: null, pointer: null, hover: null, selected: null, active: false },
+  programs: [], programRecipes: [], programStatus: null, currentProgram: null,
+  programFiles: [], programFile: '', programContent: ''
 };
 
 const PAGE_LOADERS = {
@@ -31,6 +33,7 @@ const PAGE_LOADERS = {
   urllearn: () => loadUrlLearn(),
   skills: () => loadSkillPage(),
   chat: () => { loadConversations(); refreshRepoSelect(); updateChatEngine(); },
+  programs: () => loadProgramPage(),
   autonomous: () => loadAutonomous(),
   learning: () => loadTasks(),
   knowledge: () => loadKnowledge(),
@@ -1938,7 +1941,8 @@ const SETTING_MAP = {
   sLearningSpeed: 'learning_speed', sLearningPages: 'learning_pages_per_session',
   sLearningInterval: 'learning_session_interval_seconds', sLearningRandom: 'learning_random',
   sLearningVerify: 'learning_auto_verify', sLearningResume: 'learning_resume',
-  sLearningTopics: 'learning_topics'
+  sLearningTopics: 'learning_topics', sCodegenProvider: 'codegen_provider',
+  sCodeExecTimeout: 'code_exec_timeout'
 };
 async function loadSettings() {
   try {
@@ -1967,7 +1971,7 @@ async function saveSettings() {
       'deep_research_pages', 'request_delay_seconds', 'research_interval_seconds', 'verification_sources',
       'max_repo_files', 'max_repo_file_kb', 'max_repo_mb', 'repo_chunk_lines', 'repo_chunk_overlap',
       'learn_depth', 'learn_max_links', 'web_chunk_chars', 'web_chunk_overlap', 'max_web_pages',
-      'learning_pages_per_session', 'learning_session_interval_seconds']);
+      'learning_pages_per_session', 'learning_session_interval_seconds', 'code_exec_timeout']);
     const booleans = new Set(['auto_resume', 'skills_auto_context', 'learning_random',
       'learning_auto_verify', 'learning_resume']);
     const payload = {};
@@ -2025,6 +2029,291 @@ function initMatrix() {
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
+}
+
+/* ---------------------------------------------------------------- code studio */
+const debouncedProgramDetect = debounce(() => detectProgramTemplates(), 450);
+
+function codegenLabel(value) {
+  const v = String(value || 'auto').toLowerCase();
+  if (v === 'off' || v === 'none' || v === 'disabled') return 'CODEGEN OFF';
+  if (v === 'auto') return 'CODEGEN AUTO';
+  return 'CODEGEN ' + v.toUpperCase();
+}
+
+function renderProgramStatus(status) {
+  if (!status) return;
+  state.programStatus = status;
+  if ($('progCountTag')) $('progCountTag').textContent = num(status.total) + ' PROGRAMS';
+  if ($('progProviderTag')) $('progProviderTag').textContent = codegenLabel(status.codegen_provider);
+  if ($('progShellTag')) {
+    $('progShellTag').textContent = status.shell ? 'SHELL ON' : 'SHELL OFF';
+    $('progShellTag').classList.toggle('on', !!status.shell);
+  }
+}
+
+function programCard(program) {
+  const status = String(program.status || 'unverified');
+  const stateLabel = program.verified ? 'VERIFIED' : status.replace(/_/g, ' ').toUpperCase();
+  let stateClass = 'program-state';
+  if (!program.verified) {
+    if (/fail|error/.test(status)) stateClass += ' failed';
+    else if (program.source === 'model') stateClass += ' model';
+    else stateClass += ' draft';
+  }
+  const active = state.currentProgram && state.currentProgram.id === program.id ? ' active' : '';
+  return '<div class="program-card' + active + '" data-program="' + program.id + '">' +
+    '<span class="' + stateClass + '">' + esc(stateLabel) + '</span>' +
+    '<h4>' + esc(program.name || 'Program') + '</h4>' +
+    '<small>' + esc(program.language || '?') + ' · ' + esc(program.kind || 'script') + ' · ' +
+    (program.source === 'model' ? 'MODEL' : 'RECIPE') + ' · ' + esc(when(program.created_at)) + '</small>' +
+    '<small>' + esc(clip(program.request || '', 160)) + '</small>' +
+    '</div>';
+}
+
+function renderProgramList() {
+  const list = $('programList');
+  if (!list) return;
+  list.innerHTML = state.programs.map(programCard).join('') ||
+    '<div class="empty">No programs yet. Write one on the left.</div>';
+}
+
+async function loadPrograms() {
+  const data = await api('/programs');
+  state.programs = data.programs || [];
+  renderProgramStatus(data.status);
+  renderProgramList();
+}
+
+async function loadProgramRecipes() {
+  try {
+    const data = await api('/programs/recipes');
+    state.programRecipes = data.recipes || [];
+    renderProgramStatus(data.status);
+    const select = $('programRecipe');
+    const current = select.value;
+    select.innerHTML = '<option value="">Auto-detect</option>' + state.programRecipes.map((recipe) =>
+      '<option value="' + esc(recipe.id) + '">' + esc(recipe.title) + ' · ' + esc(recipe.language) + '</option>'
+    ).join('');
+    if (state.programRecipes.some((recipe) => recipe.id === current)) select.value = current;
+    renderProgramRecipeChips();
+  } catch (e) {
+    if ($('programRecipes')) $('programRecipes').innerHTML = '<div class="empty">' + esc(e.message) + '</div>';
+  }
+}
+
+function renderProgramRecipeChips() {
+  const box = $('programRecipes');
+  if (!box) return;
+  const selected = $('programRecipe') ? $('programRecipe').value : '';
+  box.innerHTML = state.programRecipes.map((recipe) => (
+    '<button class="chip program-chip' + (recipe.id === selected ? ' on' : '') + '" data-recipe="' +
+    esc(recipe.id) + '" title="' + esc((recipe.summary || '') + ' — ' + (recipe.language || '') + ' ' + (recipe.kind || '')) + '">' +
+    esc(recipe.title) + ' · ' + esc(recipe.language) + '</button>'
+  )).join('') || '<div class="empty">No templates available.</div>';
+}
+
+function applyRecipeSelection() {
+  renderProgramRecipeChips();
+}
+
+async function detectProgramTemplates() {
+  const request = $('programRequest').value.trim();
+  const box = $('programMatches');
+  if (!box) return;
+  if (!request) {
+    box.innerHTML = '<div class="empty">Type a request to see matching templates.</div>';
+    return;
+  }
+  try {
+    const data = await api('/programs/detect', { method: 'POST', body: JSON.stringify({ request }) });
+    const matches = data.matches || [];
+    box.innerHTML = matches.map((match) => (
+      '<button class="chip program-chip" data-recipe="' + esc(match.id) + '" title="' +
+      esc(match.summary || '') + '">' + esc(match.title) + ' · ' + esc(match.language) + ' · ' +
+      Number(match.score || 0).toFixed(1) + '</button>'
+    )).join('') || '<div class="empty">No offline template matches. A local model will be used if one is configured.</div>';
+  } catch (e) {
+    box.innerHTML = '<div class="empty">' + esc(e.message) + '</div>';
+  }
+}
+
+async function forgeProgram() {
+  const button = $('programBuildBtn');
+  const progress = $('programProgress');
+  const select = $('programRecipe');
+  const recipeId = select.value || null;
+  let request = $('programRequest').value.trim();
+  if (!request && recipeId) {
+    request = 'Offline template: ' + (select.options[select.selectedIndex]?.text || recipeId);
+  }
+  if (!request) return toast('Describe the program you want, or pick a template.', 'warn');
+  button.disabled = true;
+  button.textContent = '⌬ Writing…';
+  progress.classList.remove('hidden');
+  progress.textContent = 'Writing real files, then verifying them. Model generation can take a minute.';
+  try {
+    const data = await api('/programs/generate', {
+      method: 'POST',
+      body: JSON.stringify({
+        request,
+        recipe_id: recipeId,
+        provider: $('programProvider').value || null
+      })
+    });
+    const program = data.program;
+    progress.textContent = 'DONE · program #' + program.id + ' · ' + program.status +
+      (program.verified ? ' · self-tests passed' : ' · not executed');
+    toast('Program #' + program.id + ' written' + (program.verified ? ' and verified.' : '. Check the verification report.'),
+      program.verified ? '' : 'warn');
+    $('programRequest').value = '';
+    select.value = '';
+    renderProgramRecipeChips();
+    await loadPrograms();
+    await openProgram(program.id);
+  } catch (e) {
+    progress.textContent = 'ERROR · ' + e.message;
+    toast(e.message, 'error');
+  } finally {
+    button.disabled = false;
+    button.textContent = '⌬ Write program';
+  }
+}
+
+function renderProgramFiles() {
+  const box = $('programFiles');
+  if (!box) return;
+  box.innerHTML = state.programFiles.map((name) => (
+    '<button class="program-file' + (name === state.programFile ? ' active' : '') + '" data-file="' +
+    esc(name) + '">' + esc(name) + '</button>'
+  )).join('');
+}
+
+function renderProgramDetail(program) {
+  state.currentProgram = program;
+  state.programFiles = program.files || [];
+  $('programDetail').classList.remove('hidden');
+  $('programDetailName').textContent = program.name || 'Program';
+  $('programDetailMeta').textContent = '#' + program.id + ' · ' + (program.language || '?') + ' · ' +
+    (program.kind || 'script') + ' · ' + (program.source === 'model' ? 'model-generated' : 'offline recipe') +
+    ' · ' + when(program.created_at);
+  const tag = $('programStatusTag');
+  tag.textContent = program.verified ? 'VERIFIED' : String(program.status || 'unverified').replace(/_/g, ' ').toUpperCase();
+  tag.classList.toggle('on', !!program.verified);
+  $('programPreviewBtn').classList.toggle('hidden', program.language !== 'html');
+  $('programVerification').textContent = program.verification || 'No verification report yet.';
+  $('programOutput').textContent = program.last_output || 'No runs yet.';
+  if (!state.programFiles.includes(state.programFile)) state.programFile = state.programFiles[0] || '';
+  renderProgramFiles();
+  if (state.programFile) openProgramFile(state.programFile);
+  renderProgramList();
+}
+
+async function openProgram(id) {
+  try {
+    const program = await api('/programs/' + id);
+    $('programPreview').classList.add('hidden');
+    $('programPreviewFrame').src = 'about:blank';
+    renderProgramDetail(program);
+    $('programDetail').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function openProgramFile(name) {
+  if (!state.currentProgram) return;
+  try {
+    const file = await api('/programs/' + state.currentProgram.id + '/file?name=' + encodeURIComponent(name));
+    state.programFile = file.name;
+    state.programContent = file.content || '';
+    $('programFilePath').textContent = file.name + ' · ' + num(state.programContent.length) + ' chars';
+    $('programCode').textContent = clip(state.programContent, 400000);
+    renderProgramFiles();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+function copyProgramCode() {
+  const text = $('programCode').textContent || '';
+  navigator.clipboard.writeText(text).then(() => toast('Code copied.')).catch(() => toast('Clipboard blocked.', 'warn'));
+}
+
+function downloadProgramFile() {
+  if (!state.programFile || !state.currentProgram) return;
+  download(state.programFile, state.programContent || '', 'text/plain');
+}
+
+function previewProgram() {
+  const program = state.currentProgram;
+  if (!program) return;
+  if (program.language !== 'html') return toast('Preview is only available for HTML programs.', 'warn');
+  const name = state.programFile && state.programFile.endsWith('.html') ? state.programFile : program.entry;
+  const frame = $('programPreviewFrame');
+  frame.src = '/api/programs/' + program.id + '/raw/' + encodeURIComponent(name) + '?t=' + Date.now();
+  $('programPreview').classList.remove('hidden');
+  toast('Previewing ' + name + ' in a sandboxed iframe.');
+}
+
+async function verifyProgram() {
+  const program = state.currentProgram;
+  if (!program) return;
+  $('programVerification').textContent = 'Verifying…';
+  try {
+    const updated = await api('/programs/' + program.id + '/verify', { method: 'POST', body: '{}' });
+    renderProgramDetail(updated);
+    await loadPrograms();
+    toast(updated.verified ? 'Self-tests passed. Program verified.' : 'Verification finished: ' + updated.status + '.',
+      updated.verified ? '' : 'warn');
+  } catch (e) {
+    $('programVerification').textContent = 'ERROR · ' + e.message;
+    toast(e.message, 'error');
+  }
+}
+
+async function runProgram() {
+  const program = state.currentProgram;
+  if (!program) return;
+  const args = $('programArgs').value.trim().split(/\s+/).filter(Boolean).slice(0, 20);
+  const output = $('programOutput');
+  output.textContent = 'Running…';
+  try {
+    const result = await api('/programs/' + program.id + '/run', {
+      method: 'POST',
+      body: JSON.stringify({ args })
+    });
+    output.textContent = result.output || (result.ok ? '(no output)' : '(no output, exit ' + result.exit + ')');
+    toast(result.ok ? 'Program exited 0.' : 'Program exited ' + result.exit + '.', result.ok ? '' : 'warn');
+    if (result.program) renderProgramDetail(result.program);
+    await loadPrograms();
+  } catch (e) {
+    output.textContent = 'ERROR · ' + e.message;
+    toast(e.message, 'error');
+  }
+}
+
+async function deleteProgram() {
+  const program = state.currentProgram;
+  if (!program) return;
+  if (!confirm('Delete "' + program.name + '" and its files from data/programs?')) return;
+  try {
+    await api('/programs/' + program.id, { method: 'DELETE' });
+    closeProgram();
+    await loadPrograms();
+    toast('Program #' + program.id + ' deleted.');
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+function closeProgram() {
+  state.currentProgram = null;
+  state.programFiles = [];
+  state.programFile = '';
+  state.programContent = '';
+  $('programDetail').classList.add('hidden');
+  $('programPreview').classList.add('hidden');
+  $('programPreviewFrame').src = 'about:blank';
+  renderProgramList();
+}
+
+async function loadProgramPage() {
+  await Promise.allSettled([loadProgramRecipes(), loadPrograms()]);
 }
 
 /* -------------------------------------------------------------- websockets */
@@ -2086,6 +2375,27 @@ function init() {
     $('skillList').addEventListener('click', (event) => {
       const card = event.target.closest('[data-skill]');
       if (card) openSkill(card.dataset.skill);
+    });
+  }
+  if ($('programList')) {
+    $('programList').addEventListener('click', (event) => {
+      const card = event.target.closest('[data-program]');
+      if (card) openProgram(Number(card.dataset.program));
+    });
+  }
+  ['programMatches', 'programRecipes'].forEach((id) => {
+    if (!$(id)) return;
+    $(id).addEventListener('click', (event) => {
+      const chip = event.target.closest('[data-recipe]');
+      if (!chip) return;
+      $('programRecipe').value = chip.dataset.recipe;
+      applyRecipeSelection();
+    });
+  });
+  if ($('programFiles')) {
+    $('programFiles').addEventListener('click', (event) => {
+      const file = event.target.closest('[data-file]');
+      if (file) openProgramFile(file.dataset.file);
     });
   }
   $$('#repoTabs .tab').forEach((tab) => tab.addEventListener('click', () => {
