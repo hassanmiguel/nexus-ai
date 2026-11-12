@@ -12,7 +12,9 @@ const titles = {
   graph: 'Knowledge Graph', history: 'Learning History', tasks: 'Task Manager',
   activity: 'Activity Stream', monitor: 'System Monitor',
   experiments: 'Experiments', analytics: 'Analytics', models: 'Providers',
-  permissions: 'Permissions', settings: 'Settings'
+  permissions: 'Permissions', settings: 'Settings',
+  dashboard: 'Dashboard', autoprogramming: 'Auto Programming',
+  review: 'Review Studio', projects: 'Projects', playground: 'Playground', agents: 'AI Agents'
 };
 
 const state = {
@@ -24,7 +26,10 @@ const state = {
   graph: { nodes: [], edges: [], stats: null, scale: 1, offsetX: 0, offsetY: 0,
            dragging: null, pointer: null, hover: null, selected: null, active: false },
   programs: [], programRecipes: [], programStatus: null, currentProgram: null,
-  programFiles: [], programFile: '', programContent: ''
+  programFiles: [], programFile: '', programContent: '',
+  dashboard: null, ap: null, apConcepts: [], apExercises: [], apCurrentExercise: null,
+  rv: null, rvHistory: [], pj: null, pjList: [], pjCurrent: null,
+  ag: null, agRuns: []
 };
 
 const PAGE_LOADERS = {
@@ -47,7 +52,13 @@ const PAGE_LOADERS = {
   analytics: () => loadAnalytics(),
   models: () => loadProviders(),
   permissions: () => loadPermissions(),
-  settings: () => loadSettings()
+  settings: () => loadSettings(),
+  dashboard: () => loadDashboard(),
+  autoprogramming: () => loadAutoProgramming(),
+  review: () => loadReview(),
+  projects: () => loadProjects(),
+  playground: () => { pgLangChanged(); },
+  agents: () => loadAgents()
 };
 
 /* ------------------------------------------------------------------ helpers */
@@ -1942,16 +1953,25 @@ const SETTING_MAP = {
   sLearningInterval: 'learning_session_interval_seconds', sLearningRandom: 'learning_random',
   sLearningVerify: 'learning_auto_verify', sLearningResume: 'learning_resume',
   sLearningTopics: 'learning_topics', sCodegenProvider: 'codegen_provider',
-  sCodeExecTimeout: 'code_exec_timeout'
+  sCodeExecTimeout: 'code_exec_timeout',
+  sApEnabled: 'autoprogramming_enabled', sApLanguages: 'autoprogramming_languages',
+  sApDifficulty: 'autoprogramming_difficulty', sApInterval: 'autoprogramming_interval_seconds',
+  sApConcepts: 'autoprogramming_concepts_per_cycle', sApInternet: 'autoprogramming_use_internet',
+  sApAssess: 'autoprogramming_auto_assess', sExplorationCategories: 'exploration_categories',
+  sExplorationInterval: 'exploration_interval_seconds', sExplorationSites: 'exploration_sites_per_cycle',
+  sReviewAuto: 'review_auto', sReviewMinScore: 'review_min_score',
+  sProjectAutoTest: 'project_auto_test'
 };
+const BOOLEAN_SETTINGS = ['auto_resume', 'skills_auto_context', 'learning_random',
+  'learning_auto_verify', 'learning_resume', 'autoprogramming_enabled',
+  'autoprogramming_use_internet', 'autoprogramming_auto_assess', 'review_auto', 'project_auto_test'];
 async function loadSettings() {
   try {
     const s = await api('/settings');
     Object.entries(SETTING_MAP).forEach(([id, key]) => {
       const el = $(id);
       if (!el) return;
-      if (['auto_resume', 'skills_auto_context', 'learning_random', 'learning_auto_verify',
-           'learning_resume'].includes(key)) {
+      if (BOOLEAN_SETTINGS.includes(key)) {
         el.value = String(s[key]).toLowerCase() === 'true' ? 'true' : 'false';
       } else {
         el.value = s[key] != null ? s[key] : '';
@@ -1971,9 +1991,10 @@ async function saveSettings() {
       'deep_research_pages', 'request_delay_seconds', 'research_interval_seconds', 'verification_sources',
       'max_repo_files', 'max_repo_file_kb', 'max_repo_mb', 'repo_chunk_lines', 'repo_chunk_overlap',
       'learn_depth', 'learn_max_links', 'web_chunk_chars', 'web_chunk_overlap', 'max_web_pages',
-      'learning_pages_per_session', 'learning_session_interval_seconds', 'code_exec_timeout']);
-    const booleans = new Set(['auto_resume', 'skills_auto_context', 'learning_random',
-      'learning_auto_verify', 'learning_resume']);
+      'learning_pages_per_session', 'learning_session_interval_seconds', 'code_exec_timeout',
+      'autoprogramming_interval_seconds', 'autoprogramming_concepts_per_cycle',
+      'exploration_interval_seconds', 'exploration_sites_per_cycle', 'review_min_score']);
+    const booleans = new Set(BOOLEAN_SETTINGS);
     const payload = {};
     Object.entries(SETTING_MAP).forEach(([id, key]) => {
       const el = $(id);
@@ -2346,6 +2367,23 @@ function connectWS() {
 function init() {
   $$('.nav').forEach((button) => button.addEventListener('click', () => showPage(button.dataset.page)));
 
+  window.addEventListener('message', (event) => {
+    const data = event.data || {};
+    if (!data.__nexusPreview) return;
+    const frame = $('rvPreviewFrame');
+    if (!frame || event.source !== frame.contentWindow) return;
+    const log = $('rvPreviewLog');
+    if (!log) return;
+    const kind = String(data.type || 'log');
+    const line = document.createElement('div');
+    line.className = 'preview-line ' + kind;
+    line.textContent = '[' + kind + '] ' + (Array.isArray(data.args) ? data.args.join(' ') : String(data.args || ''));
+    log.appendChild(line);
+    log.scrollTop = log.scrollHeight;
+  });
+
+  if ($('pgLang')) $('pgLang').addEventListener('change', () => pgLangChanged(true));
+
   $('providerSwitch').addEventListener('click', (event) => {
     const button = event.target.closest('button[data-provider]');
     if (button) switchProvider(button.dataset.provider);
@@ -2446,5 +2484,555 @@ function init() {
   setInterval(() => { if ($('activity').classList.contains('active')) loadEvents(); }, 12000);
   setInterval(() => { if ($('monitor') && $('monitor').classList.contains('active')) loadMonitor(); }, 12000);
 }
+
+/* ========================================================================
+   DASHBOARD
+   ======================================================================== */
+async function loadDashboard() {
+  try {
+    const days = 30;
+    state.dashboard = await api(`/dashboard?days=${days}`);
+    renderDashboard();
+  } catch (e) { toast('Dashboard load failed: ' + e.message, 'error'); }
+}
+
+function renderDashboard() {
+  const d = state.dashboard || {};
+  const o = d.overview || {};
+  $('dKnowledge').textContent = num(o.knowledge);
+  $('dKnowledgeVerified').textContent = (o.verified_knowledge || 0) + ' verified';
+  $('dConcepts').textContent = num(o.concepts);
+  $('dConceptsMastered').textContent = (o.mastered_concepts || 0) + ' mastered';
+  $('dExercises').textContent = num(o.exercises);
+  $('dExercisesVerified').textContent = (o.verified_exercises || 0) + ' verified';
+  $('dProjects').textContent = num(o.projects);
+  $('dAvgReview').textContent = (o.avg_review_score || 0) + '/100';
+  $('dAssessments').textContent = num(o.assessments);
+  $('dAssessmentsSolved').textContent = (o.solved_assessments || 0) + ' solved';
+  $('dExplored').textContent = num(o.explored_sites);
+  $('dExploredLearned').textContent = (o.learned_sites || 0) + ' learned';
+
+  if (d.knowledge) drawBarChart('chartKnowledge', d.knowledge.daily.map(x => ({ label: x.day, value: x.n })), '#5eead4');
+  if (d.skills) drawBarChart('chartSkills', d.skills.map(x => ({ label: x.name, value: Math.round(x.score) })), '#39ff9a');
+  if (d.tasks) {
+    const labels = Object.keys(o.tasks_by_status || {});
+    drawPieChart('chartTasks', labels.map(k => ({ label: k, value: o.tasks_by_status[k] })));
+  }
+  if (d.exploration) {
+    drawBarChart('chartExplore', d.exploration.by_status.map(x => ({ label: x.status, value: x.n })), '#ffb74d');
+  }
+
+  const sys = $('dashboardSystem');
+  if (sys) sys.textContent = JSON.stringify(d.system || {}, null, 2);
+  const detail = $('dashboardDetail');
+  if (detail) detail.classList.remove('hidden');
+}
+
+function drawBarChart(id, items, color) {
+  const cv = $(id); if (!cv) return;
+  const ctx = cv.getContext('2d');
+  const w = cv.width = cv.clientWidth * (window.devicePixelRatio || 1);
+  const h = cv.height = cv.clientHeight * (window.devicePixelRatio || 1);
+  ctx.scale(window.devicePixelRatio || 1, window.devicePixelRatio || 1);
+  const cw = cv.clientWidth, ch = cv.clientHeight;
+  ctx.clearRect(0, 0, cw, ch);
+  if (!items || !items.length) return;
+  const max = Math.max(...items.map(x => x.value), 1);
+  const pad = 40, gap = 14, bw = (cw - pad - gap * (items.length - 1)) / items.length;
+  ctx.font = '11px JetBrains Mono, monospace';
+  ctx.fillStyle = '#64748b';
+  items.forEach((it, i) => {
+    const x = pad + i * (bw + gap);
+    const barH = (it.value / max) * (ch - 30);
+    ctx.fillStyle = color;
+    ctx.fillRect(x, ch - 24 - barH, bw * 0.72, barH);
+    ctx.fillStyle = '#64748b';
+    ctx.fillText(String(it.value), x + bw * 0.36 - 6, ch - 26 - barH);
+    ctx.fillText(it.label.length > 8 ? it.label.slice(0, 8) + '…' : it.label, x, ch - 8);
+  });
+}
+
+function drawPieChart(id, items) {
+  const cv = $(id); if (!cv) return;
+  const ctx = cv.getContext('2d');
+  const w = cv.width = cv.clientWidth * (window.devicePixelRatio || 1);
+  const h = cv.height = cv.clientHeight * (window.devicePixelRatio || 1);
+  ctx.scale(window.devicePixelRatio || 1, window.devicePixelRatio || 1);
+  const cw = cv.clientWidth, ch = cv.clientHeight;
+  ctx.clearRect(0, 0, cw, ch);
+  if (!items || !items.length) return;
+  const total = items.reduce((s, x) => s + x.value, 0) || 1;
+  const colors = ['#5eead4', '#39ff9a', '#ffb74d', '#ff5470', '#bb86fc'];
+  let angle = 0;
+  const cx = cw * 0.22, cy = ch * 0.5, r = Math.min(cx, ch * 0.42);
+  items.forEach((it, i) => {
+    const slice = (it.value / total) * 2 * Math.PI;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.arc(cx, cy, r, angle, angle + slice);
+    ctx.closePath();
+    ctx.fillStyle = colors[i % colors.length];
+    ctx.fill();
+    angle += slice;
+  });
+  ctx.fillStyle = '#64748b'; ctx.font = '11px JetBrains Mono, monospace';
+  let y = 16;
+  items.forEach((it, i) => {
+    ctx.fillStyle = colors[i % colors.length];
+    ctx.fillRect(14, y - 9, 10, 10);
+    ctx.fillStyle = '#64748b';
+    ctx.fillText(it.label + ': ' + it.value, 28, y);
+    y += 18;
+  });
+}
+
+/* ========================================================================
+   AUTO PROGRAMMING
+   ======================================================================== */
+async function loadAutoProgramming() {
+  try {
+    state.ap = await api('/autoprogramming/status');
+    renderAutoProgramming();
+    await apLoadConcepts();
+    await apLoadExercises();
+  } catch (e) { toast('Auto Programming load failed: ' + e.message, 'error'); }
+}
+
+function renderAutoProgramming() {
+  const ap = state.ap || {};
+  const st = ap.state || {};
+  $('apStatusTag').textContent = (st.running ? (st.paused ? 'PAUSED' : 'RUNNING') : 'IDLE') + '  ·  cycle ' + (st.cycle || 0);
+  $('apCycleTag').textContent = st.phase || 'idle';
+  const langSel = $('apLang');
+  if (langSel && !langSel.dataset.loaded) {
+    const catalog = (ap.stats && ap.stats.catalog) || [];
+    langSel.innerHTML = '<option value="">auto (all enabled)</option>' + catalog.map(function (l) {
+      const tool = (ap.stats.toolchains || {})[l.id] || {};
+      const suffix = tool.available ? (tool.executable ? '' : ' · static') : ' · not installed';
+      return '<option value="' + esc(l.id) + '">' + esc(l.name) + suffix + '</option>';
+    }).join('');
+    langSel.dataset.loaded = '1';
+  }
+  const box = $('apDetail');
+  if (ap.stats) {
+    const s = ap.stats;
+    box.innerHTML = '<div class="ap-summary"><b>Concepts:</b> ' + num(s.concepts_total) + ' total · ' + num(s.mastered) + ' mastered · ' + num(s.studying) + ' studying · ' + num(s.queued) + ' queued<br>' +
+      '<b>Exercises:</b> ' + num(s.exercises) + ' · ' + num(s.verified_exercises) + ' verified<br>' +
+      '<b>Assessments:</b> ' + num(s.assessments) + ' · avg ' + (s.assessment_avg || 0) + '<br>' +
+      '<b>Programming knowledge:</b> ' + num(s.programming_knowledge) + ' · <b>Cycles:</b> ' + num(s.cycles) + ' · <b>Errors fixed:</b> ' + num(s.errors_fixed) +
+      '</div>';
+  }
+}
+
+async function apStart() {
+  const body = {};
+  const l = $('apLang'); if (l && l.value) body.language = l.value;
+  const c = $('apConcept'); if (c && c.value) body.concept = c.value;
+  const diff = $('apDifficulty'); if (diff && diff.value) body.difficulty = diff.value;
+  const assess = $('apAssess'); if (assess) body.assess = assess.value === 'true';
+  state.ap = await apiPost('/autoprogramming/start', body);
+  renderAutoProgramming(); toast('Auto programming started.');
+}
+async function apPause() { state.ap = await api('/autoprogramming/pause', { method: 'POST' }); renderAutoProgramming(); }
+async function apResume() { state.ap = await apiPost('/autoprogramming/resume', {}); renderAutoProgramming(); }
+async function apStop() { state.ap = await api('/autoprogramming/stop', { method: 'POST' }); renderAutoProgramming(); }
+async function apStudy() {
+  const body = {};
+  const l = $('apLang'); if (l && l.value) body.language = l.value;
+  const c = $('apConcept'); if (c && c.value) body.concept = c.value;
+  const diff = $('apDifficulty'); const assess = $('apAssess');
+  const r = await apiPost('/autoprogramming/study', { language: body.language, concept: body.concept, difficulty: diff ? diff.value : undefined, assess: assess ? assess.value === 'true' : undefined });
+  state.apCurrentExercise = r.exercise || null;
+  renderAutoProgramming(); renderApExercise(r);
+  toast('Cycle complete · verified: ' + (r.verified ? 'yes' : 'no') + ' · mastery: ' + (r.outcome ? (r.outcome.mastery * 100).toFixed(0) + '%' : '—'));
+}
+
+async function apLoadConcepts() {
+  try {
+    state.apConcepts = (await api('/autoprogramming/concepts')).concepts || [];
+    const tbody = $('apConceptsBody'); if (!tbody) return;
+    tbody.innerHTML = '';
+    for (const c of state.apConcepts) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = '<td>' + esc(c.language) + '</td><td>' + esc(c.concept) + '</td><td>' + esc(c.difficulty) + '</td>' +
+        '<td><span class="badge badge-' + (c.status || 'queued') + '">' + esc(c.status || 'queued') + '</span></td>' +
+        '<td>' + Number(c.mastery || 0).toFixed(2) + '</td><td>' + num(c.attempts) + '</td><td>' + num(c.successes) + '</td>';
+      tbody.appendChild(tr);
+    }
+  } catch (e) { toast('Concepts load failed: ' + e.message, 'error'); }
+}
+
+async function apLoadExercises() {
+  try {
+    state.apExercises = (await api('/autoprogramming/exercises?limit=40')).exercises || [];
+    const tbody = $('apExercisesBody'); if (!tbody) return;
+    tbody.innerHTML = '';
+    for (const e of state.apExercises) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = '<td>' + num(e.id) + '</td><td>' + esc(e.title) + '</td><td>' + esc(e.language) + '</td>' +
+        '<td>' + esc(e.concept || '') + '</td>' +
+        '<td><span class="badge badge-' + (e.status || '') + '">' + esc(e.status || '') + '</span></td>' +
+        '<td>' + (e.score != null ? e.score.toFixed(0) : '—') + '</td><td>' + num(e.runtime_ms || 0) + ' ms</td>';
+      tr.onclick = () => apSelectExercise(e.id);
+      tbody.appendChild(tr);
+    }
+  } catch (e) { toast('Exercises load failed: ' + e.message, 'error'); }
+}
+
+async function apSelectExercise(id) {
+  const e = await api('/autoprogramming/exercises/' + id);
+  state.apCurrentExercise = e;
+  renderApExercise(e);
+}
+
+function renderApExercise(r) {
+  const box = $('apExerciseDetail');
+  const e = r.exercise || r;
+  if (!e) { box.classList.add('hidden'); return; }
+  box.classList.remove('hidden');
+  $('apExerciseTitle').textContent = e.title || '—';
+  $('apExercisePrompt').textContent = e.prompt || '—';
+  const ex = r.execution || null;
+  $('apExerciseOutput').textContent = ex
+    ? ((ex.ok ? 'TESTS PASSED' : (ex.skipped ? 'SKIPPED' : 'TESTS FAILED')) +
+       ' · exit ' + (ex.exit_code == null ? '—' : ex.exit_code) + ' · ' + num(ex.duration_ms || 0) + ' ms\n' +
+       (ex.stdout || ex.stderr || ex.note || 'No output.'))
+    : (e.output || 'Not run yet — press “Run tests”.');
+  const sol = $('apExerciseSolution'); sol.classList.add('hidden'); sol.textContent = e.solution || '—';
+  const det = $('apExerciseDetail');
+  det.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+async function apRunExercise() {
+  if (!state.apCurrentExercise) return toast('No exercise selected.');
+  const id = state.apCurrentExercise.id;
+  if (!id) return toast('This exercise has no stored id yet. Run a study cycle first.');
+  try {
+    const r = await apiPost('/autoprogramming/exercises/' + id + '/run', {});
+    state.apCurrentExercise = r.exercise || state.apCurrentExercise;
+    renderApExercise(r);
+    toast('Run ' + (r.verified ? 'passed' : 'failed') + ' · score ' + (r.score || 0));
+    await apLoadExercises();
+    await apLoadConcepts();
+  } catch (err) { toast('Run failed: ' + err.message, 'error'); }
+}
+
+function apShowSolution() { const s = $('apExerciseSolution'); if (s) s.classList.remove('hidden'); }
+function apHideExercise() { const b = $('apExerciseDetail'); if (b) b.classList.add('hidden'); }
+
+/* ========================================================================
+   REVIEW STUDIO
+   ======================================================================== */
+async function loadReview() { await rvLoadHistory(); }
+
+function rvGetFiles() {
+  try { return JSON.parse($('rvFiles').value || '{}'); } catch (e) { throw new Error('Invalid JSON in files.'); }
+}
+
+async function rvAnalyze() {
+  try {
+    const files = rvGetFiles();
+    const r = await apiPost('/review/analyze', { files, title: $('rvTitle').value || undefined, language: $('rvLang').value || undefined, run_tests: true, ai: true, save: false });
+    state.rv = r;
+    renderReview(r);
+  } catch (e) { toast('Review failed: ' + e.message, 'error'); }
+}
+
+async function rvRun() {
+  try {
+    const files = rvGetFiles();
+    const lang = $('rvLang').value || undefined;
+    const r = await apiPost('/review/run', { files, language: lang, entry: undefined, mode: 'test', args: [] });
+    $('rvExecution').textContent = JSON.stringify({ ok: r.ok, exit_code: r.exit_code, stdout: r.stdout, stderr: r.stderr, duration_ms: r.duration_ms }, null, 2);
+    toast('Run ' + (r.ok ? 'passed' : 'failed') + ' · ' + (r.duration_ms || 0) + ' ms');
+  } catch (e) { toast('Run failed: ' + e.message, 'error'); }
+}
+
+async function rvFix() {
+  try {
+    const files = rvGetFiles();
+    const r = await apiPost('/review/fix', { files });
+    $('rvFiles').value = JSON.stringify(r.files, null, 2);
+    toast('Applied ' + (r.changes || []).length + ' conservative fix(es). Re-run Analyze to re-score.');
+  } catch (e) { toast('Fix failed: ' + e.message, 'error'); }
+}
+
+async function rvPreview() {
+  try {
+    const files = rvGetFiles();
+    const html = await apiPostRaw('/review/preview', { files, entry: undefined });
+    const frame = $('rvPreviewFrame'); const box = $('rvPreviewBox');
+    const log = $('rvPreviewLog');
+    if (log) log.innerHTML = '';
+    frame.srcdoc = html;
+    box.classList.remove('hidden');
+  } catch (e) { toast('Preview failed: ' + e.message, 'error'); }
+}
+
+async function apiPostRaw(path, body) {
+  const response = await fetch('/api' + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  if (!response.ok) { const t = await response.text(); throw new Error(t.slice(0, 300)); }
+  return response.text();
+}
+
+async function rvSave() {
+  if (!state.rv) return toast('Nothing to save. Analyze first.');
+  try {
+    const r = await apiPost('/review/analyze', { files: rvGetFiles(), title: $('rvTitle').value || 'Review Studio', language: $('rvLang').value || undefined, run_tests: true, ai: true, save: true });
+    toast('Review saved #' + r.review_id);
+    await rvLoadHistory();
+  } catch (e) { toast('Save failed: ' + e.message, 'error'); }
+}
+
+async function rvExport() {
+  try {
+    const files = rvGetFiles();
+    const res = await fetch('/api/review/export', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ files, entry: undefined }) });
+    if (!res.ok) throw new Error(await res.text());
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = 'nexus-review.zip'; a.click();
+    URL.revokeObjectURL(url);
+  } catch (e) { toast('Export failed: ' + e.message, 'error'); }
+}
+
+async function rvLoadHistory() {
+  try {
+    state.rvHistory = (await api('/review/history?limit=40')).reviews || [];
+    const tbody = $('rvHistoryBody'); if (!tbody) return;
+    tbody.innerHTML = '';
+    for (const r of state.rvHistory) {
+      const s = r.scores || {};
+      const sev = (r.issues || []);
+      const c = { high: sev.filter(x => x.severity === 'high').length,
+                  medium: sev.filter(x => x.severity === 'medium').length,
+                  low: sev.filter(x => x.severity === 'low').length };
+      const tr = document.createElement('tr');
+      tr.innerHTML = '<td>' + when(r.created_at) + '</td><td>' + esc(r.title) + '</td><td>' + (r.target_kind || '') + (r.target_id ? '#' + r.target_id : '') + '</td>' +
+        '<td>' + (r.overall != null ? r.overall.toFixed(0) : '—') + '</td>' +
+        '<td>' + num(c.high) + '</td><td>' + num(c.medium) + '</td><td>' + num(c.low) + '</td>';
+      tbody.appendChild(tr);
+    }
+  } catch (e) { toast('History load failed: ' + e.message, 'error'); }
+}
+
+function renderReview(r) {
+  const box = $('rvResult'); if (!box) return;
+  box.classList.remove('hidden');
+  const s = r.scores || {};
+  let html = '';
+  const keys = ['quality', 'correctness', 'performance', 'security', 'accessibility', 'responsiveness', 'design', 'bugs'];
+  for (const k of keys) {
+    const v = s[k] != null ? s[k] : 0;
+    html += '<div class="score-chip"><strong>' + esc(k) + '</strong> <span class="score-val">' + v + '</span><div class="score-bar"><div class="score-fill" style="width:' + v + '%"></div></div></div>';
+  }
+  $('rvScores').innerHTML = html;
+  const c = (r.counts || (r.analysis && r.analysis.counts) || {});
+  $('rvIssues').innerHTML = '<div class="issues"><strong>' + (r.overall || 0).toFixed(0) + '/100 overall</strong> · ' +
+    num(c.high) + ' high, ' + num(c.medium) + ' medium, ' + num(c.low) + ' low · ' +
+    num(r.metrics ? r.metrics.files : 0) + ' files, ' + num(r.metrics ? r.metrics.lines : 0) + ' lines</div>' +
+    (r.issues && r.issues.length ? '<ul style="margin-top:6px">' + r.issues.slice(0, 10).map(f => '<li><span class="sev sev-' + f.severity + '">' + f.severity.toUpperCase() + '</span> ' + esc(f.message) + (f.file ? ' (' + esc(f.file) + ')' : '') + '</li>').join('') + '</ul>' : '');
+  const exec = r.execution;
+  if (exec) {
+    $('rvExecution').textContent = (exec.ok ? 'TESTS PASSED' : 'TESTS ' + (exec.skipped ? 'SKIPPED' : 'FAILED')) +
+      ' · exit ' + exec.exit_code + ' · ' + exec.duration_ms + ' ms\n' + (exec.stdout || exec.stderr || '');
+  } else {
+    $('rvExecution').textContent = 'Execution not run.';
+  }
+  $('rvSummary').textContent = r.summary || '';
+}
+
+/* ========================================================================
+   PROJECTS
+   ======================================================================== */
+async function loadProjects() {
+  try {
+    state.pjList = (await api('/projects?limit=60')).projects || [];
+    renderProjects();
+  } catch (e) { toast('Projects load failed: ' + e.message, 'error'); }
+}
+
+function renderProjects() {
+  const tbody = $('pjListBody'); if (!tbody) return;
+  tbody.innerHTML = '';
+  for (const p of state.pjList) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = '<td>' + num(p.id) + '</td><td>' + esc(p.name) + '</td><td>' + esc(p.archetype) + '</td>' +
+      '<td><span class="badge badge-' + (p.status || 'built') + '">' + esc(p.status || 'built') + '</span></td>' +
+      '<td>' + (p.review_score != null ? p.review_score.toFixed(0) : '—') + '</td><td>' + num(p.files ? p.files.length : 0) + '</td>' +
+      '<td>' + when(p.created_at) + '</td>' +
+      '<td><button class="textbtn small" onclick="pjSelect(' + num(p.id) + ')">Open</button></td>';
+    tbody.appendChild(tr);
+  }
+}
+
+async function pjBuild() {
+  try {
+    const p = await apiPost('/projects', { request: $('pjRequest').value, archetype: $('pjArchetype').value || undefined, name: $('pjName').value || undefined, run_tests: true, auto_review: true });
+    state.pjCurrent = p;
+    renderProjectDetail(p);
+    await loadProjects();
+    toast('Project built · ' + p.status + ' · review ' + (p.review_score || 0).toFixed(0) + '/100');
+  } catch (e) { toast('Build failed: ' + e.message, 'error'); }
+}
+
+async function pjSelect(id) {
+  const p = await api('/projects/' + id);
+  state.pjCurrent = p;
+  renderProjectDetail(p);
+}
+
+function renderProjectDetail(p) {
+  const box = $('pjDetail'); if (!box) return;
+  box.classList.remove('hidden');
+  $('pjDetailName').textContent = p.name || '—';
+  $('pjDetailMeta').textContent = p.archetype + ' · ' + p.status + ' · ' + (p.file_rows ? p.file_rows.length : 0) + ' files';
+  const fl = $('pjDetailFiles');
+  fl.innerHTML = '<strong>Files:</strong> ' + (p.file_rows || []).map(f => '<code>' + esc(f.path) + '</code> (' + esc(f.language) + ')').join(' · ');
+  const out = $('pjDetailTest');
+  out.textContent = p.test_output ? (p.test_output.slice(0, 1500) + (p.test_output.length > 1500 ? '…' : '')) : 'No test output.';
+  const rv = $('pjDetailReview');
+  if (p.review_history && p.review_history.length) {
+    const latest = p.review_history[0];
+    rv.innerHTML = '<strong>Latest review:</strong> ' + (latest.overall || 0).toFixed(0) + '/100 · ' + (latest.summary || '').slice(0, 300);
+  } else {
+    rv.textContent = 'No review yet.';
+  }
+  box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+async function pjTest() { if (!state.pjCurrent) return; try { const r = await apiPost('/projects/' + state.pjCurrent.id + '/test', {}); state.pjCurrent = await api('/projects/' + state.pjCurrent.id); renderProjectDetail(state.pjCurrent); toast('Test ' + (r.ok ? 'passed' : 'failed')); } catch (e) { toast('Test failed: ' + e.message, 'error'); } }
+async function pjReview() { if (!state.pjCurrent) return; try { const r = await apiPost('/projects/' + state.pjCurrent.id + '/review', {}); toast('Reviewed · ' + (r.overall || 0).toFixed(0) + '/100'); state.pjCurrent = await api('/projects/' + state.pjCurrent.id); renderProjectDetail(state.pjCurrent); await loadProjects(); } catch (e) { toast('Review failed: ' + e.message, 'error'); } }
+async function pjExport() {
+  if (!state.pjCurrent) return toast('Open a project first.');
+  try {
+    const res = await fetch('/api/projects/' + state.pjCurrent.id + '/export', { method: 'POST' });
+    if (!res.ok) throw new Error(await res.text());
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = (state.pjCurrent.slug || 'nexus-project') + '.zip';
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  } catch (e) { toast('Export failed: ' + e.message, 'error'); }
+}
+async function pjDelete() { if (!state.pjCurrent || !confirm('Delete project #' + state.pjCurrent.id + '?')) return; try { await api('/projects/' + state.pjCurrent.id, { method: 'DELETE' }); toast('Deleted'); state.pjCurrent = null; $('pjDetail').classList.add('hidden'); await loadProjects(); } catch (e) { toast('Delete failed: ' + e.message, 'error'); } }
+function pjHideDetail() { $('pjDetail').classList.add('hidden'); }
+
+/* ========================================================================
+   PLAYGROUND
+   ======================================================================== */
+function pgLangChanged(force) {
+  const ex = { python: "print('sandbox-ok', 6 * 7)\n", javascript: "console.log('sandbox-ok', 6 * 7);\n", php: "<?php echo 'sandbox-ok ' . (6*7);\n", sql: "CREATE TABLE t(id INTEGER PRIMARY KEY, name TEXT);\nINSERT INTO t VALUES(1,'ada');\nSELECT * FROM t;\n", c: '#include <stdio.h>\nint main(void){printf("sandbox-ok %d\\n", 6*7);return 0;}\n', cpp: '#include <iostream>\nint main(){std::cout << "sandbox-ok " << (6*7) << "\\n";}\n', rust: 'fn main(){println!("sandbox-ok {}", 6 * 7);}\n' };
+  const sel = $('pgLang'); const exText = $('pgCode');
+  if (!sel || !exText) return;
+  state.pgDrafts = state.pgDrafts || {};
+  if (force && sel.dataset.prevLang && sel.dataset.prevLang !== sel.value) {
+    state.pgDrafts[sel.dataset.prevLang] = exText.value;
+  }
+  if (force || !exText.value.trim()) {
+    exText.value = state.pgDrafts[sel.value] || ex[sel.value] || ex.python;
+    const entry = $('pgEntry');
+    if (entry) entry.value = '';
+  }
+  sel.dataset.prevLang = sel.value;
+}
+function pgExample() { pgLangChanged(true); }
+
+async function pgRun() {
+  try {
+    const lang = $('pgLang').value;
+    const files = {};
+    files[($('pgEntry').value || 'main.' + { python: 'py', javascript: 'js', php: 'php', sql: 'sql', c: 'c', cpp: 'cpp', rust: 'rs' }[lang])] = $('pgCode').value || '';
+    const r = await apiPost('/playground/run', { language: lang, files, entry: $('pgEntry').value || undefined, args: ($('pgArgs').value || '').trim() ? $('pgArgs').value.split(/\s+/) : [] });
+    $('pgOutput').textContent = JSON.stringify({ ok: r.ok, exit_code: r.exit_code, stdout: r.stdout, stderr: r.stderr, duration_ms: r.duration_ms, note: r.note }, null, 2);
+    toast('Run ' + (r.ok ? 'passed' : 'failed') + ' · ' + r.duration_ms + ' ms');
+  } catch (e) { toast('Run failed: ' + e.message, 'error'); }
+}
+
+async function pgSelfCheck() {
+  try {
+    const r = await api('/playground/self-check');
+    $('pgOutput').textContent = JSON.stringify(r, null, 2);
+    toast('Self-check ' + (r.ok ? 'PASSED' : 'FAILED'));
+  } catch (e) { toast('Self-check failed: ' + e.message, 'error'); }
+}
+
+/* ========================================================================
+   AI AGENTS
+   ======================================================================== */
+async function loadAgents() {
+  try {
+    state.ag = await api('/agents');
+    renderAgents();
+    await agLoadRuns();
+  } catch (e) { toast('Agents load failed: ' + e.message, 'error'); }
+}
+
+function renderAgents() {
+  const box = $('agentsList'); if (!box) return;
+  const catalog = (state.ag && state.ag.agents) || {};
+  const by = (state.ag && state.ag.by_agent) || [];
+  const counts = {};
+  for (const row of by) counts[row.agent] = row;
+  const ids = Object.keys(catalog);
+  if (!ids.length) { box.innerHTML = '<div class="empty">No agent catalog available.</div>'; return; }
+  box.innerHTML = ids.map(function (id) {
+    const meta = catalog[id] || { name: id };
+    const row = counts[id] || {};
+    return '<div class="agent-chip"><div><strong>' + esc(meta.name || id) + '</strong>' +
+      '<div class="muted" style="font-size:11px">' + esc(meta.description || '') + '</div>' +
+      '<div class="muted" style="font-size:10px;margin-top:3px">' + num(row.n || 0) + ' runs · avg ' +
+      (row.score != null ? Number(row.score).toFixed(0) : '—') + '</div></div>' +
+      '<span class="badge badge-completed">' + num(row.completed || 0) + ' done</span></div>';
+  }).join('');
+}
+
+async function agRun() {
+  try {
+    const r = await apiPost('/agents/run', { agent: $('agAgent').value, task: $('agTask').value });
+    $('agOutput').textContent = r.output;
+    $('agSteps').textContent = (r.steps || []).map(s => s.step + ': ' + s.detail).join('\n');
+    toast('Agent ' + r.status + ' · score ' + r.score);
+    await agLoadRuns();
+  } catch (e) { toast('Agent run failed: ' + e.message, 'error'); }
+}
+
+async function agTeam() {
+  try {
+    const r = await apiPost('/agents/team', { task: $('agTeamTask').value });
+    $('agTeamOutput').textContent = r.output;
+    toast('Team complete · score ' + r.score + ' · ' + r.steps.length + ' specialist(s)');
+    await agLoadRuns();
+  } catch (e) { toast('Team run failed: ' + e.message, 'error'); }
+}
+
+async function agLoadRuns() {
+  try {
+    state.agRuns = await api('/agents/runs?limit=40');
+    const tbody = $('agRunsTable'); if (!tbody) return;
+    tbody.innerHTML = '';
+    for (const r of state.agRuns.runs || []) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = '<td>' + num(r.id) + '</td><td>' + esc(r.agent) + '</td>' +
+        '<td><span class="badge badge-' + (r.status || '') + '">' + esc(r.status || '') + '</span></td>' +
+        '<td>' + (r.score != null ? r.score.toFixed(0) : '—') + '</td><td>' + when(r.created_at) + '</td>' +
+        '<td>' + esc((r.input || '').slice(0, 60)) + '</td>';
+      tbody.appendChild(tr);
+    }
+  } catch (e) { toast('Runs load failed: ' + e.message, 'error'); }
+}
+function agHideRuns() { $('agRuns').classList.add('hidden'); }
+
+/* ========================================================================
+   helpers used by new pages
+   ======================================================================== */
+async function apiPost(path, body) {
+  const response = await fetch('/api' + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  if (!response.ok) { const t = await response.text(); let m = t; try { m = JSON.parse(t).detail || t; } catch { } throw new Error(String(m).slice(0, 500)); }
+  return response.json();
+}
+
 
 document.addEventListener('DOMContentLoaded', init);

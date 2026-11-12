@@ -46,6 +46,12 @@
       <button class="nav" data-page="models"><i>⬡</i><span>Providers</span><b>18</b></button>
       <button class="nav" data-page="permissions"><i>⌂</i><span>Permissions</span><b>19</b></button>
       <button class="nav" data-page="settings"><i>⚙</i><span>Settings</span><b>20</b></button>
+      <button class="nav" data-page="dashboard"><i>▩</i><span>Dashboard</span><b>21</b></button>
+      <button class="nav" data-page="autoprogramming"><i>⚙</i><span>Auto Programming</span><b>22</b></button>
+      <button class="nav" data-page="review"><i>🔍</i><span>Review Studio</span><b>23</b></button>
+      <button class="nav" data-page="projects"><i>◱</i><span>Projects</span><b>24</b></button>
+      <button class="nav" data-page="playground"><i>⬡</i><span>Playground</span><b>25</b></button>
+      <button class="nav" data-page="agents"><i>◐</i><span>AI Agents</span><b>26</b></button>
     </nav>
 
     <div class="sidebar-bottom">
@@ -832,6 +838,263 @@
             <p class="muted">Autonomous learning needs the Internet permission. It respects robots.txt, rate limits and the domain allowlist; it never bypasses logins, paywalls or CAPTCHAs.</p>
           </div>
         </div>
+        <div class="panel">
+          <label>AUTO PROGRAMMING & EXPLORATION</label><h3>Autonomy limits</h3>
+          <div class="form-grid">
+            <div class="two-col">
+              <div><label>WORKER AUTO-START</label><select id="sApEnabled"><option value="false">Disabled</option><option value="true">Enabled</option></select></div>
+              <div><label>LANGUAGES (COMMA-SEPARATED)</label><input id="sApLanguages" placeholder="python,javascript,cpp"></div>
+            </div>
+            <div class="two-col">
+              <div><label>DIFFICULTY</label><select id="sApDifficulty"><option value="beginner">Beginner</option><option value="intermediate">Intermediate</option><option value="advanced">Advanced</option><option value="expert">Expert</option></select></div>
+              <div><label>CYCLE INTERVAL (S)</label><input id="sApInterval" type="number" min="30" max="3600"></div>
+            </div>
+            <div class="two-col">
+              <div><label>CONCEPTS PER CYCLE</label><input id="sApConcepts" type="number" min="1" max="5"></div>
+              <div><label>STUDY FROM INTERNET</label><select id="sApInternet"><option value="true">Enabled (allowlisted only)</option><option value="false">Bundled notes only</option></select></div>
+            </div>
+            <div class="two-col">
+              <div><label>GENERATE ASSESSMENTS</label><select id="sApAssess"><option value="true">Enabled</option><option value="false">Disabled</option></select></div>
+              <div><label>EXPLORATION CATEGORIES</label><input id="sExplorationCategories" placeholder="programming, science, security"></div>
+            </div>
+            <div class="two-col">
+              <div><label>EXPLORATION INTERVAL (S)</label><input id="sExplorationInterval" type="number" min="30" max="3600"></div>
+              <div><label>SITES PER EXPLORATION</label><input id="sExplorationSites" type="number" min="1" max="6"></div>
+            </div>
+            <div class="two-col">
+              <div><label>AUTO-REVIEW PROJECTS</label><select id="sReviewAuto"><option value="true">Enabled</option><option value="false">Disabled</option></select></div>
+              <div><label>MIN REVIEW SCORE</label><input id="sReviewMinScore" type="number" min="0" max="100"></div>
+            </div>
+            <div class="two-col">
+              <div><label>AUTO-TEST PROJECTS</label><select id="sProjectAutoTest"><option value="true">Enabled</option><option value="false">Disabled</option></select></div>
+              <div></div>
+            </div>
+            <button class="primary" onclick="saveSettings()">Save configuration</button>
+            <p class="muted">These limits bound the autonomous worker. Code continues to run in the sandbox only while the shell permission is granted.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- DASHBOARD -->
+    <section id="dashboard" class="page">
+      <div class="sectionintro">
+        <div><div class="eyebrow cyan">REAL-TIME METRICS</div><h2>Dashboard</h2><p>Every figure is computed from SQLite at request time. Nothing is seeded or invented.</p></div>
+        <button class="secondary" onclick="loadDashboard()">Refresh ↻</button>
+      </div>
+      <div class="dashboard-grid" id="dashboardCards">
+        <div class="stat-card"><div class="stat-value" id="dKnowledge">—</div><div class="stat-label">Knowledge records</div><div class="stat-sub" id="dKnowledgeVerified">— verified</div></div>
+        <div class="stat-card"><div class="stat-value" id="dConcepts">—</div><div class="stat-label">Programming concepts</div><div class="stat-sub" id="dConceptsMastered">— mastered</div></div>
+        <div class="stat-card"><div class="stat-value" id="dExercises">—</div><div class="stat-label">Exercises</div><div class="stat-sub" id="dExercisesVerified">— verified</div></div>
+        <div class="stat-card"><div class="stat-value" id="dProjects">—</div><div class="stat-label">Projects</div><div class="stat-sub" id="dAvgReview">— avg review</div></div>
+        <div class="stat-card"><div class="stat-value" id="dAssessments">—</div><div class="stat-label">Assessments</div><div class="stat-sub" id="dAssessmentsSolved">— solved</div></div>
+        <div class="stat-card"><div class="stat-value" id="dExplored">—</div><div class="stat-label">Sites explored</div><div class="stat-sub" id="dExploredLearned">— learned</div></div>
+      </div>
+      <div class="panel" style="margin-top:18px">
+        <div class="panelhead"><div><label>CHARTS</label><h3>Real aggregates</h3></div></div>
+        <div class="chart-row">
+          <div class="chart-panel"><canvas id="chartKnowledge" height="150"></canvas><div class="chart-caption">Knowledge growth (30 days)</div></div>
+          <div class="chart-panel"><canvas id="chartSkills" height="150"></canvas><div class="chart-caption">Programming skill score by language</div></div>
+        </div>
+        <div class="chart-row" style="margin-top:16px">
+          <div class="chart-panel"><canvas id="chartTasks" height="150"></canvas><div class="chart-caption">Task completion by status</div></div>
+          <div class="chart-panel"><canvas id="chartExplore" height="150"></canvas><div class="chart-caption">Exploration by status</div></div>
+        </div>
+      </div>
+      <div class="panel hidden" id="dashboardDetail" style="margin-top:18px">
+        <div class="panelhead"><div><label>SYSTEM</label><h3>Runtime state</h3></div></div>
+        <pre id="dashboardSystem" class="code-block tool-output">—</pre>
+      </div>
+    </section>
+
+    <!-- AUTO PROGRAMMING -->
+    <section id="autoprogramming" class="page">
+      <div class="sectionintro">
+        <div><div class="eyebrow cyan">AUTONOMOUS PROGRAMMING</div><h2>Auto Programming</h2><p>Select a concept → study → write a tested program → execute → track mastery. A concept is mastered only when its tests pass in the sandbox.</p></div>
+        <div class="row-actions"><span class="tag" id="apStatusTag">IDLE</span><span class="tag" id="apCycleTag">cycle 0</span></div>
+      </div>
+      <div class="panel">
+        <div class="panelhead"><div><label>CONTROL</label><h3>Worker</h3></div></div>
+        <div class="form-grid">
+          <div class="two-col">
+            <div><label>LANGUAGE</label><select id="apLang"><option value="">auto (all enabled)</option></select></div>
+            <div><label>CONCEPT (optional)</label><input id="apConcept" placeholder="e.g. functions and arguments"></div>
+          </div>
+          <div class="two-col">
+            <div><label>DIFFICULTY</label><select id="apDifficulty"><option value="beginner">Beginner</option><option value="intermediate">Intermediate</option><option value="advanced">Advanced</option><option value="expert">Expert</option></select></div>
+            <div><label>ASSESS</label><select id="apAssess"><option value="true">On — generate & solve a challenge</option><option value="false">Off — exercise only</option></select></div>
+          </div>
+          <div class="form-actions">
+            <button class="primary" onclick="apStart()">▶ Start worker</button>
+            <button class="secondary" onclick="apPause()">⏸ Pause</button>
+            <button class="secondary" onclick="apResume()">▶ Resume</button>
+            <button class="danger" onclick="apStop()">⏹ Stop</button>
+            <button class="textbtn" onclick="apStudy()">Study & practise once</button>
+            <p class="muted">Running code needs the “Run shell commands” permission. Programming-doc discovery needs user-approved allowlist additions; otherwise Wikipedia is used.</p>
+          </div>
+        </div>
+        <div id="apDetail" class="ap-detail"><div class="empty">No cycle run yet.</div></div>
+      </div>
+      <div class="panel" style="margin-top:16px">
+        <div class="panelhead"><div><label>CONCEPTS</label><h3>Mastery table</h3><button class="textbtn" onclick="apLoadConcepts()">Refresh ↻</button></div></div>
+        <div id="apConcepts" class="table-wrap"><table><thead><tr><th>Language</th><th>Concept</th><th>Difficulty</th><th>Status</th><th>Mastery</th><th>Attempts</th><th>Successes</th></tr></thead><tbody id="apConceptsBody"></tbody></table></div>
+      </div>
+      <div class="panel" style="margin-top:16px">
+        <div class="panelhead"><div><label>EXERCISES</label><h3>History</h3><button class="textbtn" onclick="apLoadExercises()">Refresh ↻</button></div></div>
+        <div id="apExercises" class="table-wrap"><table><thead><tr><th>#</th><th>Title</th><th>Language</th><th>Concept</th><th>Status</th><th>Score</th><th>Runtime</th></tr></thead><tbody id="apExercisesBody"></tbody></table></div>
+      </div>
+      <div class="panel hidden" id="apExerciseDetail" style="margin-top:16px">
+        <div class="panelhead"><div><label>EXERCISE</label><h3 id="apExerciseTitle">—</h3></div></div>
+        <pre id="apExercisePrompt" class="code-block">—</pre>
+        <div class="form-actions" style="margin-top:10px">
+          <button class="secondary" onclick="apRunExercise()">▶ Run tests</button>
+          <button class="textbtn" onclick="apShowSolution()">Show solution</button>
+          <button class="textbtn" onclick="apHideExercise()">Hide ✕</button>
+        </div>
+        <pre id="apExerciseOutput" class="code-block tool-output">—</pre>
+        <pre id="apExerciseSolution" class="code-block hidden">—</pre>
+      </div>
+    </section>
+
+    <!-- REVIEW STUDIO -->
+    <section id="review" class="page">
+      <div class="sectionintro">
+        <div><div class="eyebrow cyan">REVIEW STUDIO</div><h2>Code Review</h2><p>Static analysis plus a sandboxed run/test. Scores are deterministic from findings; the model only adds narrative.</p></div>
+      </div>
+      <div class="panel">
+        <div class="panelhead"><div><label>INPUT</label><h3>Files to review</h3></div></div>
+        <div class="form-grid">
+          <label>FILES (JSON: { "path": "content" })</label>
+          <textarea id="rvFiles" rows="8" placeholder='{ "index.html": "...", "app.js": "..." }'></textarea>
+          <div class="two-col">
+            <div><label>TITLE</label><input id="rvTitle" placeholder="My project review"></div>
+            <div><label>LANGUAGE</label><input id="rvLang" placeholder="e.g. python, javascript, html"></div>
+          </div>
+          <div class="form-actions">
+            <button class="primary" onclick="rvAnalyze()">🔎 Analyze</button>
+            <button class="secondary" onclick="rvRun()">▶ Run / Test</button>
+            <button class="secondary" onclick="rvFix()">🛠 Auto-fix</button>
+            <button class="secondary" onclick="rvPreview()">👁 Preview</button>
+            <button class="textbtn" onclick="rvSave()">💾 Save review</button>
+            <button class="textbtn" onclick="rvExport()">⬇ Export ZIP</button>
+          </div>
+        </div>
+        <div id="rvResult" class="review-result hidden">
+          <div class="scores" id="rvScores"></div>
+          <div id="rvIssues"></div>
+          <div id="rvExecution" class="muted"></div>
+          <div id="rvSummary" style="margin-top:10px"></div>
+        </div>
+        <div id="rvPreviewBox" class="preview-box hidden"><iframe id="rvPreviewFrame" title="Review preview" sandbox="allow-scripts allow-forms allow-modals"></iframe><div id="rvPreviewLog" class="preview-log" aria-live="polite"></div></div>
+      </div>
+      <div class="panel" style="margin-top:16px">
+        <div class="panelhead"><div><label>HISTORY</label><h3>Saved reviews</h3><button class="textbtn" onclick="rvLoadHistory()">Refresh ↻</button></div></div>
+        <div id="rvHistory" class="table-wrap"><table><thead><tr><th>When</th><th>Title</th><th>Target</th><th>Overall</th><th>High</th><th>Medium</th><th>Low</th></tr></thead><tbody id="rvHistoryBody"></tbody></table></div>
+      </div>
+    </section>
+
+    <!-- PROJECTS -->
+    <section id="projects" class="page">
+      <div class="sectionintro">
+        <div><div class="eyebrow cyan">PROJECTS</div><h2>Project Builder</h2><p>Requirements → plan → architecture → real files → dependencies → test → review. A generated prototype scaffold, not a production deployment.</p></div>
+      </div>
+      <div class="panel">
+        <div class="panelhead"><div><label>BUILD</label><h3>New project</h3></div></div>
+        <div class="form-grid">
+          <label>DESCRIBE THE PROJECT</label><textarea id="pjRequest" rows="3" placeholder="e.g. a chat UI prototype, a FastAPI task API, a CLI todo tool, a data dashboard"></textarea>
+          <div class="two-col">
+            <div><label>ARCHETYPE</label><select id="pjArchetype"><option value="">Auto-detect</option><option value="static-site">Static website</option><option value="chat-ui">Chat UI prototype</option><option value="fastapi-api">Python FastAPI API</option><option value="python-cli">Python CLI tool</option><option value="data-dashboard">Data dashboard</option></select></div>
+            <div><label>NAME</label><input id="pjName" placeholder="optional project name"></div>
+          </div>
+          <div class="form-actions">
+            <button class="primary" onclick="pjBuild()">🏗 Build project</button>
+            <p class="muted">Tests run in the sandbox; results are stored with the project.</p>
+          </div>
+        </div>
+      </div>
+      <div class="panel" style="margin-top:16px">
+        <div class="panelhead"><div><label>LIBRARY</label><h3>Projects</h3><button class="textbtn" onclick="pjLoad()">Refresh ↻</button></div></div>
+        <div id="pjList" class="table-wrap"><table><thead><tr><th>#</th><th>Name</th><th>Archetype</th><th>Status</th><th>Review</th><th>Files</th><th>Created</th><th>Actions</th></tr></thead><tbody id="pjListBody"></tbody></table></div>
+      </div>
+      <div class="panel hidden" id="pjDetail" style="margin-top:16px">
+        <div class="panelhead"><div><label>PROJECT</label><h3 id="pjDetailName">—</h3><small id="pjDetailMeta" class="muted"></small></div>
+          <div class="row-actions">
+            <button class="secondary" onclick="pjTest()">▶ Test</button>
+            <button class="secondary" onclick="pjReview()">🔎 Review</button>
+            <button class="textbtn" onclick="pjExport()">⬇ Export ZIP</button>
+            <button class="danger" onclick="pjDelete()">🗑 Delete</button>
+            <button class="textbtn" onclick="pjHideDetail()">Close ✕</button>
+          </div>
+        </div>
+        <div id="pjDetailFiles" class="project-files"></div>
+        <div id="pjDetailTest" class="muted" style="margin-top:10px"></div>
+        <div id="pjDetailReview" style="margin-top:12px"></div>
+      </div>
+    </section>
+
+    <!-- PLAYGROUND -->
+    <section id="playground" class="page">
+      <div class="sectionintro">
+        <div><div class="eyebrow cyan">CODE PLAYGROUND</div><h2>Sandboxed execution</h2><p>Run code in the process-jail sandbox. Nothing is executed without the “Run shell commands” permission.</p></div>
+      </div>
+      <div class="panel">
+        <div class="panelhead"><div><label>RUN</label><h3>Execute code</h3></div></div>
+        <div class="form-grid">
+          <div class="two-col">
+            <div><label>LANGUAGE</label><select id="pgLang"><option value="python">Python</option><option value="javascript">JavaScript</option><option value="php">PHP</option><option value="sql">SQL (SQLite)</option><option value="c">C</option><option value="cpp">C++</option><option value="rust">Rust</option></select></div>
+            <div><label>ENTRY FILE</label><input id="pgEntry" placeholder="main.py"></div>
+          </div>
+          <label>ARGUMENTS</label><input id="pgArgs" placeholder="arg1 arg2">
+          <label>CODE</label>
+          <textarea id="pgCode" rows="10" placeholder="print('hello from the sandbox')"></textarea>
+          <div class="form-actions">
+            <button class="primary" onclick="pgRun()">▶ Run</button>
+            <button class="secondary" onclick="pgSelfCheck()">⚙ Self-check</button>
+            <button class="textbtn" onclick="pgExample()">Load example</button>
+            <p class="muted">Windows process isolation is not a VM — generated code runs as the current OS user.</p>
+          </div>
+        </div>
+        <div id="pgOutput" class="code-block tool-output">—</div>
+      </div>
+    </section>
+
+    <!-- AI AGENTS -->
+    <section id="agents" class="page">
+      <div class="sectionintro">
+        <div><div class="eyebrow cyan">AI AGENTS</div><h2>Agent Studio</h2><p>Seven bounded agents: programming, research, cybersecurity education, mathematics, web development, data analysis, software testing.</p></div>
+      </div>
+      <div class="panel">
+        <div class="panelhead"><div><label>AGENTS</label><h3>Specialists</h3></div></div>
+        <div id="agentsList" class="chip-row"><div class="empty">Loading agents…</div></div>
+      </div>
+      <div class="panel" style="margin-top:16px">
+        <div class="panelhead"><div><label>RUN A TASK</label><h3>Single agent</h3></div></div>
+        <div class="form-grid">
+          <div class="two-col">
+            <div><label>AGENT</label><select id="agAgent"><option value="programming">Programming</option><option value="research">Research</option><option value="cybersecurity">Cybersecurity education</option><option value="mathematics">Mathematics</option><option value="webdev">Web development</option><option value="data">Data analysis</option><option value="testing">Software testing</option></select></div>
+            <div><label>TASK</label><input id="agTask" placeholder="e.g. gcd of 48 and 18"></div>
+          </div>
+          <div class="form-actions">
+            <button class="primary" onclick="agRun()">▶ Run agent</button>
+            <p class="muted">Cybersecurity agent refuses offensive or harmful requests.</p>
+          </div>
+        </div>
+        <div id="agOutput" class="code-block tool-output">—</div>
+        <div id="agSteps" class="muted" style="margin-top:8px"></div>
+      </div>
+      <div class="panel" style="margin-top:16px">
+        <div class="panelhead"><div><label>TEAM</label><h3>Collaboration pipeline</h3></div></div>
+        <div class="form-grid">
+          <label>TEAM TASK</label><textarea id="agTeamTask" rows="3" placeholder="e.g. research Python decorators, write a tested example, verify it"></textarea>
+          <div class="form-actions">
+            <button class="primary" onclick="agTeam()">🤝 Run team</button>
+          </div>
+        </div>
+        <div id="agTeamOutput" class="code-block tool-output">—</div>
+      </div>
+      <div class="panel hidden" id="agRuns" style="margin-top:16px">
+        <div class="panelhead"><div><label>RUN HISTORY</label><h3>Agent runs</h3><button class="textbtn" onclick="agLoadRuns()">Refresh ↻</button><button class="textbtn" onclick="agHideRuns()">Close ✕</button></div></div>
+        <div id="agRunsBody" class="table-wrap"><table><thead><tr><th>#</th><th>Agent</th><th>Status</th><th>Score</th><th>Created</th><th>Task</th></tr></thead><tbody id="agRunsTable"></tbody></table></div>
       </div>
     </section>
 

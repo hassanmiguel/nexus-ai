@@ -18,6 +18,7 @@ import asyncio
 import random
 import re
 import urllib.parse
+from datetime import datetime, timedelta, timezone
 
 import httpx
 
@@ -164,20 +165,51 @@ async def discover_topics(count=3):
 async def _pick_topic(mode):
     _seed_topics()
     sync_setting_topics()
+    # Retry cooldown: a pending topic that just failed waits before another try.
+    cutoff = (datetime.now(timezone.utc) - timedelta(minutes=15)).isoformat()
     with connect() as db:
         row = db.execute(
-            "SELECT * FROM learning_topics WHERE status='pending' ORDER BY priority DESC, id LIMIT 1").fetchone()
+            "SELECT * FROM learning_topics WHERE status='pending' "
+            "AND (attempts=0 OR updated_at<?) ORDER BY priority DESC, id LIMIT 1", (cutoff,)).fetchone()
     if row:
         with connect() as db:
             db.execute("UPDATE learning_topics SET status='learning',updated_at=?,attempts=attempts+1 WHERE id=?",
                        (now(), row['id']))
         return row['topic']
     if mode == 'random' or read_bool('learning_random', True):
-        topic = random.choice(CURATED_TOPICS)
+        with connect() as db:
+            existing = {r['topic'].lower(): dict(r) for r in
+                        db.execute('SELECT * FROM learning_topics').fetchall()}
+        # Never reset a learned or in-progress curated topic just to learn it
+        # again; that caused an endless failure loop on an offline machine.
+        candidates = []
+        for topic in CURATED_TOPICS:
+            item = existing.get(topic.lower())
+            if item is None:
+                candidates.append(topic)
+            elif (item['status'] == 'failed' and int(item['attempts'] or 0) < 3
+                  and (item['updated_at'] or '') < cutoff):
+                candidates.append(topic)
+        if not candidates:
+            return None
+        topic = random.choice(candidates)
         add_topic(topic, source='random', priority=5)
         return topic
     created = await discover_topics(1)
-    return created[0] if created else random.choice(CURATED_TOPICS)
+    return created[0] if created else None
+
+
+def _mark_topic_failure(topic, detail=''):
+    """Record a failed session and stop retrying a topic after three tries."""
+    with connect() as db:
+        row = db.execute('SELECT id,attempts FROM learning_topics WHERE topic=?', (topic,)).fetchone()
+        if not row:
+            return
+        attempts = int(row['attempts'] or 0)
+        status = 'failed' if attempts >= 3 else 'pending'
+        db.execute('UPDATE learning_topics SET status=?,detail=?,updated_at=? WHERE id=?',
+                   (status, str(detail)[:500], now(), row['id']))
+    event('learning', f'Learning topic “{topic}” marked {status} after {attempts} attempt(s).')
 
 
 # --------------------------------------------------------------------------- #
@@ -388,7 +420,7 @@ async def _loop(mode):
             topic = STATE['requested_topic'] or await _pick_topic(mode)
             STATE['requested_topic'] = ''
             if not topic:
-                await asyncio.sleep(5)
+                await asyncio.sleep(max(60, _speed()['interval']))
                 continue
             topic = _clean_topic(topic)
             STATE.update(topic=topic, mode=mode, phase='discovering', current_url='', last_error='')
@@ -404,6 +436,7 @@ async def _loop(mode):
             except Exception as exc:
                 STATE['last_error'] = str(exc)[:400]
                 _finish_session(session_id, 'failed', str(exc)[:600])
+                _mark_topic_failure(topic, str(exc))
                 event('warning', f'Autonomous learning session #{session_id} failed: {exc}')
             finally:
                 STATE.update(session_id=None, current_url='', phase='idle')

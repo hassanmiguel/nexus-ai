@@ -51,7 +51,14 @@ async def store_knowledge(title, content, url, topic, confidence, verification='
             'INSERT INTO knowledge(title,content,source_url,topic,confidence,created_at,embedding,verification_status,source_domain,embedding_kind) '
             'VALUES(?,?,?,?,?,?,?,?,?,?)',
             (title, content, url, topic, confidence, now(), vector, verification, domain, kind))
-        return cur.lastrowid
+        knowledge_id = cur.lastrowid
+    # Curate: version snapshot, duplicate link, confidence, category.
+    try:
+        from . import selfimprove
+        selfimprove.after_store(knowledge_id)
+    except Exception:
+        pass
+    return knowledge_id
 
 
 async def retrieve(query, limit=8):

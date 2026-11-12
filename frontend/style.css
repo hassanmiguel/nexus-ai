@@ -635,3 +635,51 @@ footer span:last-child{margin-left:auto}
 .core.core-error .core-sphere{box-shadow:0 0 60px #ff547099,0 0 120px #ff547044}
 @keyframes corepulse{0%{filter:brightness(1.6)}100%{filter:brightness(1)}}
 @keyframes coreerror{0%,40%{filter:hue-rotate(-60deg) brightness(1.5)}100%{filter:none}}
+
+/* ------------------------------------------------ dashboard */
+.dashboard-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:8px 0 6px}
+.stat-card{padding:14px 16px;border:1px solid var(--line);border-radius:10px;background:var(--panel)}
+.stat-value{font:700 22px var(--mono);color:var(--green)}
+.stat-label{font:9px var(--mono);letter-spacing:1.6px;color:var(--muted);margin-top:6px}
+.stat-sub{font:10px var(--mono);color:#557177;margin-top:3px}
+.chart-row{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.chart-panel{border:1px solid var(--line);border-radius:10px;background:var(--panel);padding:10px 12px}
+.chart-caption{font:9px var(--mono);color:var(--muted);margin-top:8px}
+
+/* ------------------------------------------------ auto programming */
+.ap-summary{font:12px/1.6 var(--sans);color:var(--text)}
+.ap-detail{border:1px solid var(--line);border-radius:10px;background:var(--panel);padding:14px 16px;margin-top:10px}
+
+/* ------------------------------------------------ review studio */
+.review-result{border:1px solid var(--line);border-radius:10px;background:var(--panel);padding:14px 16px;margin-top:10px}
+.scores{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px;margin-bottom:8px}
+.score-chip{border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:#040a0c}
+.score-chip strong{font:8px var(--mono);letter-spacing:1px;color:var(--muted);display:block;margin-bottom:2px}
+.score-val{font:700 16px var(--mono);color:var(--green)}
+.score-bar{height:6px;background:#061014;border-radius:3px;margin-top:4px;overflow:hidden}
+.score-fill{height:100%;background:var(--green);border-radius:3px;width:0}
+.issues{font:12px/1.5 var(--sans);color:var(--text)}
+.sev{display:inline-block;font:8px var(--mono);padding:1px 6px;border-radius:8px;color:#fff;margin-right:6px}
+.sev-high{background:var(--red)}
+.sev-medium{background:var(--amber);color:#040a0c}
+.sev-low{background:var(--cyan);color:#040a0c}
+.preview-box{border:1px solid var(--line);border-radius:10px;background:#020609;margin-top:10px;overflow:hidden}
+.preview-box iframe{width:100%;height:360px;display:block}
+.preview-log{max-height:130px;overflow:auto;border-top:1px solid var(--line);background:#020609;padding:6px 10px;font:11px var(--mono);color:var(--text-dim)}
+.preview-log:empty{display:none}
+.preview-line{padding:1px 0;white-space:pre-wrap;word-break:break-word}
+.preview-line.error{color:var(--red)}
+.preview-line.warn{color:var(--amber)}
+.preview-line.ready{color:var(--green)}
+
+/* ------------------------------------------------ projects / agents */
+.project-files{font:12px var(--mono);color:var(--text-dim);margin-top:8px}
+.agent-chip{display:flex;justify-content:space-between;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--panel);margin:6px 0}
+
+/* ------------------------------------------------ badges */
+.badge{font:8px var(--mono);letter-spacing:1px;padding:1px 8px;border-radius:10px;background:#0b1a1c;color:#4a6a70}
+.badge-mastered,.badge-completed,.badge-solved,.badge-verified,.badge-running{background:#0d5e3c;color:var(--green)}
+.badge-studied,.badge-practising,.badge-tested,.badge-built{background:#1a3a33;color:var(--green-2)}
+.badge-queued,.badge-open,.badge-discovered,.badge-draft{background:#1a2a2c;color:var(--muted)}
+.badge-failed,.badge-blocked,.badge-refused,.badge-stopped{background:#3a1c20;color:var(--red)}
+.badge-paused,.badge-interrupted{background:#3a301c;color:var(--amber)}

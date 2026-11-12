@@ -36,6 +36,16 @@ from . import autonomous
 from . import knowledge_graph
 from . import programmer
 from . import recipes as program_recipes
+from . import dashboard
+from . import explore
+from . import autoprogramming
+from . import assessment as assessment_engine
+from . import projects as project_builder
+from . import agents as agent_team
+from . import review as review_studio
+from . import proglang
+from . import selfimprove
+from . import sandbox
 
 app = FastAPI(title='NEXUS AI', version=APP_VERSION)
 app.add_middleware(
@@ -56,7 +66,15 @@ SETTINGS_KEYS = [
     'skills_auto_context', 'skills_repo',
     'learning_speed', 'learning_pages_per_session', 'learning_topics', 'learning_random',
     'learning_auto_verify', 'learning_resume', 'learning_session_interval_seconds',
+    'learning_enabled',
     'codegen_provider', 'code_exec_timeout',
+    # autonomous programming
+    'autoprogramming_enabled', 'autoprogramming_languages', 'autoprogramming_difficulty',
+    'autoprogramming_interval_seconds', 'autoprogramming_concepts_per_cycle',
+    'autoprogramming_use_internet', 'autoprogramming_auto_assess',
+    # exploration + review + projects
+    'exploration_categories', 'exploration_interval_seconds', 'exploration_sites_per_cycle',
+    'review_auto', 'review_min_score', 'review_provider', 'project_root', 'project_auto_test',
 ]
 
 
@@ -118,6 +136,22 @@ class Settings(BaseModel):
     learning_session_interval_seconds: int | None = Field(default=None, ge=30, le=3600)
     codegen_provider: str | None = Field(default=None, pattern='^(auto|off|nexus|ollama|llamacpp|openai)$')
     code_exec_timeout: int | None = Field(default=None, ge=5, le=120)
+    learning_enabled: bool | None = None
+    autoprogramming_enabled: bool | None = None
+    autoprogramming_languages: str | None = None
+    autoprogramming_difficulty: str | None = Field(default=None, pattern='^(beginner|intermediate|advanced|expert)$')
+    autoprogramming_interval_seconds: int | None = Field(default=None, ge=30, le=3600)
+    autoprogramming_concepts_per_cycle: int | None = Field(default=None, ge=1, le=5)
+    autoprogramming_use_internet: bool | None = None
+    autoprogramming_auto_assess: bool | None = None
+    exploration_categories: str | None = None
+    exploration_interval_seconds: int | None = Field(default=None, ge=30, le=3600)
+    exploration_sites_per_cycle: int | None = Field(default=None, ge=1, le=6)
+    review_auto: bool | None = None
+    review_min_score: int | None = Field(default=None, ge=0, le=100)
+    review_provider: str | None = Field(default=None, pattern='^(auto|deterministic)$')
+    project_root: str | None = None
+    project_auto_test: bool | None = None
 
 
 class ProgramRequest(BaseModel):
@@ -197,6 +231,86 @@ class LearningTopicBody(BaseModel):
     priority: int | None = Field(default=None, ge=1, le=10)
 
 
+class AutoProgrammingStart(BaseModel):
+    language: str | None = Field(default=None, max_length=40)
+    concept: str | None = Field(default=None, max_length=120)
+    difficulty: str | None = Field(default=None, pattern='^(beginner|intermediate|advanced|expert)$')
+    assess: bool | None = None
+
+
+class ConceptQueue(BaseModel):
+    language: str = Field(min_length=2, max_length=40)
+    concept: str = Field(min_length=2, max_length=160)
+    priority: int | None = Field(default=None, ge=1, le=10)
+
+
+class ReviewFiles(BaseModel):
+    files: dict[str, str] = Field(min_length=1)
+    title: str | None = Field(default=None, max_length=160)
+    language: str | None = Field(default=None, max_length=40)
+    entry: str | None = Field(default=None, max_length=160)
+    run_tests: bool = True
+    ai: bool = True
+    save: bool = False
+
+
+class ReviewRun(BaseModel):
+    files: dict[str, str] = Field(min_length=1)
+    language: str | None = Field(default=None, max_length=40)
+    entry: str | None = Field(default=None, max_length=160)
+    mode: str | None = Field(default=None, pattern='^(run|test)$')
+    args: list[str] = Field(default_factory=list, max_length=20)
+
+
+class PreviewBody(BaseModel):
+    files: dict[str, str] = Field(min_length=1)
+    entry: str | None = Field(default=None, max_length=160)
+
+
+class ProjectRequest(BaseModel):
+    request: str = Field(min_length=4, max_length=4000)
+    archetype: str | None = Field(default=None, max_length=40)
+    name: str | None = Field(default=None, max_length=60)
+    run_tests: bool | None = None
+    auto_review: bool | None = None
+
+
+class AgentRunBody(BaseModel):
+    agent: str = Field(min_length=2, max_length=40)
+    task: str = Field(min_length=2, max_length=4000)
+
+
+class AgentTeamBody(BaseModel):
+    task: str = Field(min_length=2, max_length=4000)
+    agents: list[str] = Field(default_factory=list, max_length=4)
+
+
+class AssessmentAsk(BaseModel):
+    language: str = Field(min_length=2, max_length=40)
+    concept: str | None = Field(default=None, max_length=160)
+    difficulty: str | None = Field(default=None, pattern='^(beginner|intermediate|advanced|expert)$')
+
+
+class ExploreRequest(BaseModel):
+    category: str = Field(default='general', max_length=40)
+    limit: int = Field(default=3, ge=1, le=6)
+    store: bool = True
+
+
+class ExploreUrlBody(BaseModel):
+    url: str = Field(min_length=8, max_length=2000)
+    category: str = Field(default='general', max_length=40)
+    store: bool = True
+
+
+class AllowlistApprove(BaseModel):
+    domains: list[str] = Field(default_factory=list, max_length=40)
+
+
+class KnowledgeVersions(BaseModel):
+    knowledge_id: int = Field(ge=1)
+
+
 def _count(db, sql):
     row = db.execute(sql).fetchone()
     return row['n'] if row else 0
@@ -221,6 +335,14 @@ async def startup():
         await autonomous.maybe_resume()
     except Exception as e:
         event('warning', f'Autonomous learning startup skipped: {e}')
+    try:
+        interrupted = autoprogramming.mark_interrupted()
+        if interrupted:
+            event('recovery', f'Marked {interrupted} interrupted auto-programming run(s).')
+        if read_bool('autoprogramming_enabled') and read_bool('permission_shell'):
+            await autoprogramming.start()
+    except Exception as e:
+        event('warning', f'Auto programming startup skipped: {e}')
     if setting('auto_resume', 'true').lower() == 'true' and setting('resume_on_boot', 'false').lower() == 'true':
         await agent.recover()
         await agent.start(mode=setting('mode', 'assisted'))
@@ -1156,12 +1278,19 @@ async def chat_stream(body: ChatMessage):
 # --------------------------------------------------------------------------- #
 @app.get('/api/settings')
 async def get_settings():
-    return {k: setting(k) for k in SETTINGS_KEYS}
+    values = {k: setting(k) for k in SETTINGS_KEYS}
+    key = values.get('openai_api_key') or ''
+    values['openai_api_key_set'] = bool(key)
+    values['openai_api_key'] = '********' if key else ''
+    return values
 
 
 @app.post('/api/settings')
 async def update_settings(body: Settings):
     values = body.model_dump(exclude_none=True)
+    # A masked key means "leave the stored secret unchanged".
+    if values.get('openai_api_key') in ('********', ):
+        values.pop('openai_api_key', None)
     for k, v in values.items():
         if k == 'provider':
             set_provider(v)
@@ -1172,6 +1301,438 @@ async def update_settings(body: Settings):
     audit('settings.update', json.dumps(sorted(values.keys())))
     event('settings', 'Configuration updated: ' + ', '.join(sorted(values.keys())))
     return await get_settings()
+
+
+# --------------------------------------------------------------------------- #
+# Dashboard
+# --------------------------------------------------------------------------- #
+@app.get('/api/dashboard')
+async def dashboard_data(days: int = 30):
+    return dashboard.full(max(7, min(days, 180)))
+
+
+@app.get('/api/dashboard/overview')
+async def dashboard_overview():
+    return dashboard.overview()
+
+
+# --------------------------------------------------------------------------- #
+# Autonomous programming
+# --------------------------------------------------------------------------- #
+@app.get('/api/autoprogramming/status')
+async def autoprogramming_status():
+    return autoprogramming.status()
+
+
+@app.post('/api/autoprogramming/start')
+async def autoprogramming_start(body: AutoProgrammingStart | None = None):
+    body = body or AutoProgrammingStart()
+    try:
+        return await autoprogramming.start(language=body.language, concept=body.concept,
+                                           difficulty=body.difficulty, assess=body.assess)
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc))
+
+
+@app.post('/api/autoprogramming/pause')
+async def autoprogramming_pause():
+    return await autoprogramming.pause()
+
+
+@app.post('/api/autoprogramming/resume')
+async def autoprogramming_resume():
+    try:
+        return await autoprogramming.resume()
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc))
+
+
+@app.post('/api/autoprogramming/stop')
+async def autoprogramming_stop():
+    return await autoprogramming.stop()
+
+
+@app.post('/api/autoprogramming/study')
+async def autoprogramming_study(body: AutoProgrammingStart | None = None):
+    body = body or AutoProgrammingStart()
+    try:
+        return await autoprogramming.study_and_practice(
+            language=body.language, concept=body.concept,
+            difficulty=body.difficulty, assess=body.assess)
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
+
+@app.post('/api/autoprogramming/exercises/{exercise_id}/run')
+async def autoprogramming_run_exercise(exercise_id: int):
+    try:
+        return autoprogramming.rerun_exercise(exercise_id)
+    except LookupError as exc:
+        raise HTTPException(404, str(exc))
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
+
+@app.get('/api/autoprogramming/stats')
+async def autoprogramming_stats():
+    return autoprogramming.stats()
+
+
+@app.get('/api/autoprogramming/history')
+async def autoprogramming_history(limit: int = 40):
+    return {'history': autoprogramming.history(limit)}
+
+
+@app.get('/api/autoprogramming/concepts')
+async def autoprogramming_concepts(language: str = ''):
+    return {'concepts': autoprogramming.concept_catalog(language),
+            'catalog': proglang.languages()}
+
+
+@app.post('/api/autoprogramming/concepts')
+async def autoprogramming_queue(body: ConceptQueue):
+    try:
+        return autoprogramming.queue_concept(body.language, body.concept, body.priority or 8)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
+
+@app.get('/api/autoprogramming/exercises')
+async def autoprogramming_exercises(limit: int = 80, language: str = ''):
+    return {'exercises': autoprogramming.list_exercises(limit, language)}
+
+
+@app.get('/api/autoprogramming/exercises/{exercise_id}')
+async def autoprogramming_exercise(exercise_id: int):
+    detail = autoprogramming.exercise_detail(exercise_id)
+    if not detail:
+        raise HTTPException(404, 'Exercise not found')
+    return detail
+
+
+# --------------------------------------------------------------------------- #
+# Exploration
+# --------------------------------------------------------------------------- #
+@app.get('/api/explore/stats')
+async def explore_stats():
+    return explore.stats()
+
+
+@app.get('/api/explore/sites')
+async def explore_sites(limit: int = 100, status: str = '', category: str = ''):
+    return {'sites': explore.sites(limit, status, category)}
+
+
+@app.get('/api/explore/allowlist')
+async def explore_allowlist():
+    return explore.allowlist_status()
+
+
+@app.post('/api/explore/allowlist')
+async def explore_allowlist_approve(body: AllowlistApprove):
+    return explore.approve_docs_domains(body.domains or None)
+
+
+@app.post('/api/explore/discover')
+async def explore_discover(body: ExploreRequest):
+    try:
+        return await explore.discover(body.category, body.limit)
+    except Exception as exc:
+        raise HTTPException(400, str(exc))
+
+
+@app.post('/api/explore/url')
+async def explore_one(body: ExploreUrlBody):
+    try:
+        return await explore.explore_url(body.url, body.category, body.store)
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc))
+    except Exception as exc:
+        raise HTTPException(400, str(exc))
+
+
+@app.post('/api/explore/run')
+async def explore_run(body: ExploreRequest):
+    try:
+        return await explore.explore(body.category, body.limit, body.store)
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc))
+
+
+# --------------------------------------------------------------------------- #
+# Review Studio
+# --------------------------------------------------------------------------- #
+@app.get('/api/review/meta')
+async def review_meta():
+    return {'toolchains': sandbox.toolchains(), 'score_keys': list(review_studio.SCORE_KEYS),
+            'languages': proglang.languages()}
+
+
+@app.post('/api/review/analyze')
+async def review_analyze(body: ReviewFiles):
+    try:
+        result = review_studio.review_files(body.files, body.title or '', body.language,
+                                            body.run_tests, body.ai)
+    except sandbox.ExecutionBlocked as exc:
+        raise HTTPException(403, str(exc))
+    except Exception as exc:
+        raise HTTPException(400, str(exc))
+    if body.save:
+        result['review_id'] = review_studio.save_review('ad-hoc', None, body.title or 'Review Studio',
+                                                        result)
+    return result
+
+
+@app.post('/api/review/run')
+async def review_run(body: ReviewRun):
+    try:
+        return review_studio.run(body.files, body.language, body.entry,
+                                 body.mode or 'run', body.args)
+    except sandbox.ExecutionBlocked as exc:
+        raise HTTPException(403, str(exc))
+    except Exception as exc:
+        raise HTTPException(400, str(exc))
+
+
+@app.post('/api/review/fix')
+async def review_fix(body: ReviewFiles):
+    try:
+        return review_studio.auto_fix(body.files)
+    except Exception as exc:
+        raise HTTPException(400, str(exc))
+
+
+@app.post('/api/review/preview')
+async def review_preview(body: PreviewBody):
+    try:
+        html = review_studio.build_preview(body.files, body.entry)
+    except Exception as exc:
+        raise HTTPException(400, str(exc))
+    return Response(content=html, media_type='text/html',
+                    headers={'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; "
+                                                        "script-src 'unsafe-inline'; img-src data: https:; "
+                                                        "font-src data: https:; frame-ancestors 'self'"})
+
+
+@app.get('/api/review/history')
+async def review_history(limit: int = 60):
+    return {'reviews': review_studio.list_reviews(limit)}
+
+
+@app.post('/api/review/export')
+async def review_export(body: PreviewBody):
+    try:
+        payload, filename = review_studio.export_zip(body.files, 'nexus-review')
+    except Exception as exc:
+        raise HTTPException(400, str(exc))
+    return Response(content=payload, media_type='application/zip',
+                    headers={'Content-Disposition': f'attachment; filename="{filename}"'})
+
+
+# --------------------------------------------------------------------------- #
+# Projects
+# --------------------------------------------------------------------------- #
+@app.get('/api/projects')
+async def projects_list(limit: int = 60):
+    return {'projects': project_builder.list_projects(limit),
+            'archetypes': project_builder.ARCHETYPES}
+
+
+@app.post('/api/projects')
+async def projects_create(body: ProjectRequest):
+    try:
+        return project_builder.build_project(body.request, body.archetype, body.name,
+                                             body.run_tests, body.auto_review)
+    except sandbox.ExecutionBlocked as exc:
+        raise HTTPException(403, str(exc))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    except Exception as exc:
+        raise HTTPException(400, str(exc))
+
+
+@app.get('/api/projects/{project_id}')
+async def projects_detail(project_id: int):
+    project = project_builder.get_project(project_id)
+    if not project:
+        raise HTTPException(404, 'Project not found')
+    return project
+
+
+@app.delete('/api/projects/{project_id}')
+async def projects_delete(project_id: int):
+    try:
+        return project_builder.delete_project(project_id)
+    except LookupError as exc:
+        raise HTTPException(404, str(exc))
+
+
+@app.post('/api/projects/{project_id}/test')
+async def projects_test(project_id: int):
+    try:
+        return project_builder.run_project_tests(project_id)
+    except LookupError as exc:
+        raise HTTPException(404, str(exc))
+    except sandbox.ExecutionBlocked as exc:
+        raise HTTPException(403, str(exc))
+
+
+@app.post('/api/projects/{project_id}/review')
+async def projects_review(project_id: int):
+    project = project_builder.get_project(project_id)
+    if not project:
+        raise HTTPException(404, 'Project not found')
+    files = {row['path']: row['content'] for row in project['file_rows']}
+    result = review_studio.review_files(files, project['name'], run_tests=False)
+    review_studio.save_review('project', project_id, project['name'], result)
+    with connect() as db:
+        db.execute('UPDATE projects SET review_score=?,updated_at=? WHERE id=?',
+                   (result['overall'], now(), project_id))
+    return result
+
+
+@app.post('/api/projects/{project_id}/export')
+async def projects_export(project_id: int):
+    try:
+        files, slug = project_builder.export_files(project_id)
+    except LookupError as exc:
+        raise HTTPException(404, str(exc))
+    payload, filename = review_studio.export_zip(files, slug)
+    return Response(content=payload, media_type='application/zip',
+                    headers={'Content-Disposition': f'attachment; filename="{filename}"'})
+
+
+# --------------------------------------------------------------------------- #
+# Agents
+# --------------------------------------------------------------------------- #
+@app.get('/api/agents')
+async def agents_list():
+    return agent_team.stats()
+
+
+@app.get('/api/agents/runs')
+async def agents_runs(limit: int = 60, agent: str = ''):
+    return {'runs': agent_team.list_runs(limit, agent)}
+
+
+@app.post('/api/agents/run')
+async def agents_run(body: AgentRunBody):
+    try:
+        return await agent_team.run_agent(body.agent, body.task)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
+
+@app.post('/api/agents/team')
+async def agents_team(body: AgentTeamBody):
+    try:
+        return await agent_team.collaborate(body.task, body.agents or None)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
+
+# --------------------------------------------------------------------------- #
+# Assessments
+# --------------------------------------------------------------------------- #
+@app.get('/api/assessments')
+async def assessments_list(limit: int = 60, language: str = ''):
+    return {'assessments': assessment_engine.list_assessments(limit, language),
+            'stats': assessment_engine.stats()}
+
+
+@app.post('/api/assessments')
+async def assessments_create(body: AssessmentAsk):
+    try:
+        assessment_id = assessment_engine.generate(body.language, body.concept or '',
+                                                    body.difficulty or 'beginner')
+        return assessment_engine.solve(assessment_id, compare=True)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
+
+@app.post('/api/assessments/{assessment_id}/solve')
+async def assessments_solve(assessment_id: int):
+    try:
+        return assessment_engine.solve(assessment_id, compare=True)
+    except LookupError as exc:
+        raise HTTPException(404, str(exc))
+    except sandbox.ExecutionBlocked as exc:
+        raise HTTPException(403, str(exc))
+
+
+@app.get('/api/assessments/{assessment_id}/compare')
+async def assessments_compare(assessment_id: int):
+    try:
+        return assessment_engine.compare(assessment_id)
+    except LookupError as exc:
+        raise HTTPException(404, str(exc))
+
+
+@app.get('/api/assessments/stats')
+async def assessments_stats():
+    return assessment_engine.stats()
+
+
+# --------------------------------------------------------------------------- #
+# Playground (Code Studio sandbox)
+# --------------------------------------------------------------------------- #
+@app.get('/api/playground/meta')
+async def playground_meta():
+    return {'toolchains': sandbox.toolchains(), 'languages': proglang.languages(),
+            'sandbox': 'process-jail', 'max_output_bytes': sandbox.MAX_OUTPUT_BYTES}
+
+
+@app.post('/api/playground/run')
+async def playground_run(body: ReviewRun):
+    language = body.language or (review_studio.analyze_files(body.files)['language'])
+    try:
+        result = sandbox.run_code(language, body.files, entry=body.entry, args=body.args,
+                                  timeout=None)
+    except sandbox.ExecutionBlocked as exc:
+        raise HTTPException(403, str(exc))
+    except sandbox.SandboxError as exc:
+        raise HTTPException(400, str(exc))
+    result['entry'] = body.entry or review_studio._pick_entry(body.files, language)
+    return result
+
+
+@app.get('/api/playground/self-check')
+async def playground_self_check():
+    try:
+        return sandbox.self_check()
+    except sandbox.ExecutionBlocked as exc:
+        raise HTTPException(403, str(exc))
+
+
+# --------------------------------------------------------------------------- #
+# Self-improvement / knowledge versions
+# --------------------------------------------------------------------------- #
+@app.get('/api/self-improve/stats')
+async def self_improve_stats():
+    return selfimprove.stats()
+
+
+@app.post('/api/self-improve/organize')
+async def self_improve_organize():
+    return selfimprove.organize()
+
+
+@app.get('/api/knowledge/versions')
+async def knowledge_versions(knowledge_id: int):
+    return {'versions': selfimprove.versions(knowledge_id),
+            'detail': selfimprove.explain(knowledge_id)}
+
+
+@app.post('/api/knowledge/versions')
+async def knowledge_versions_post(body: KnowledgeVersions):
+    detail = selfimprove.explain(body.knowledge_id)
+    if not detail:
+        raise HTTPException(404, 'Knowledge record not found')
+    return {'versions': selfimprove.versions(body.knowledge_id), 'detail': detail}
 
 
 # --------------------------------------------------------------------------- #

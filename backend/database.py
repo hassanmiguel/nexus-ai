@@ -38,6 +38,16 @@ CREATE TABLE IF NOT EXISTS skill_imports(id INTEGER PRIMARY KEY AUTOINCREMENT,so
 CREATE TABLE IF NOT EXISTS learning_sessions(id INTEGER PRIMARY KEY AUTOINCREMENT,topic TEXT NOT NULL,mode TEXT DEFAULT 'topic',status TEXT DEFAULT 'running',started_at TEXT NOT NULL,updated_at TEXT NOT NULL,finished_at TEXT,pages_visited INTEGER DEFAULT 0,pages_learned INTEGER DEFAULT 0,knowledge_added INTEGER DEFAULT 0,errors INTEGER DEFAULT 0,detail TEXT DEFAULT '');
 CREATE TABLE IF NOT EXISTS learning_topics(id INTEGER PRIMARY KEY AUTOINCREMENT,topic TEXT UNIQUE NOT NULL,status TEXT DEFAULT 'pending',priority INTEGER DEFAULT 5,source TEXT DEFAULT 'curated',created_at TEXT NOT NULL,updated_at TEXT NOT NULL,last_learned_at TEXT,attempts INTEGER DEFAULT 0,detail TEXT DEFAULT '');
 CREATE TABLE IF NOT EXISTS programs(id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT NOT NULL,slug TEXT NOT NULL,request TEXT NOT NULL,language TEXT DEFAULT 'python',kind TEXT DEFAULT 'script',summary TEXT DEFAULT '',directory TEXT NOT NULL,entry TEXT DEFAULT '',files TEXT DEFAULT '[]',source TEXT DEFAULT 'recipe',generator TEXT DEFAULT '',status TEXT DEFAULT 'generated',verified INTEGER DEFAULT 0,verification TEXT DEFAULT '',last_run TEXT DEFAULT '',last_output TEXT DEFAULT '',last_exit INTEGER DEFAULT 0,created_at TEXT NOT NULL,updated_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS concept_progress(id INTEGER PRIMARY KEY AUTOINCREMENT,language TEXT NOT NULL,concept TEXT NOT NULL,difficulty TEXT DEFAULT 'beginner',status TEXT DEFAULT 'queued',mastery REAL DEFAULT 0,confidence REAL DEFAULT 0.3,attempts INTEGER DEFAULT 0,successes INTEGER DEFAULT 0,last_studied_at TEXT,source_url TEXT DEFAULT '',summary TEXT DEFAULT '',created_at TEXT NOT NULL,updated_at TEXT NOT NULL,UNIQUE(language,concept));
+CREATE TABLE IF NOT EXISTS exercises(id INTEGER PRIMARY KEY AUTOINCREMENT,language TEXT NOT NULL,concept TEXT DEFAULT '',difficulty TEXT DEFAULT 'beginner',kind TEXT DEFAULT 'generated',title TEXT NOT NULL,prompt TEXT DEFAULT '',starter TEXT DEFAULT '',solution TEXT DEFAULT '',tests TEXT DEFAULT '',status TEXT DEFAULT 'draft',verified INTEGER DEFAULT 0,score REAL DEFAULT 0,runtime_ms INTEGER DEFAULT 0,output TEXT DEFAULT '',notes TEXT DEFAULT '',created_at TEXT NOT NULL,updated_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS assessments(id INTEGER PRIMARY KEY AUTOINCREMENT,language TEXT NOT NULL,concept TEXT DEFAULT '',difficulty TEXT DEFAULT 'beginner',question TEXT NOT NULL,solution TEXT DEFAULT '',alternative TEXT DEFAULT '',tests TEXT DEFAULT '',status TEXT DEFAULT 'open',score REAL DEFAULT 0,efficiency REAL DEFAULT 0,runtime_ms INTEGER DEFAULT 0,alt_runtime_ms INTEGER DEFAULT 0,output TEXT DEFAULT '',explanation TEXT DEFAULT '',created_at TEXT NOT NULL,finished_at TEXT);
+CREATE TABLE IF NOT EXISTS projects(id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT NOT NULL,slug TEXT NOT NULL,request TEXT NOT NULL,archetype TEXT DEFAULT 'static-site',stack TEXT DEFAULT '',status TEXT DEFAULT 'planned',directory TEXT NOT NULL,entry TEXT DEFAULT '',files TEXT DEFAULT '[]',architecture TEXT DEFAULT '',plan TEXT DEFAULT '',dependencies TEXT DEFAULT '',test_output TEXT DEFAULT '',review_score REAL DEFAULT 0,created_at TEXT NOT NULL,updated_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS project_files(id INTEGER PRIMARY KEY AUTOINCREMENT,project_id INTEGER NOT NULL,path TEXT NOT NULL,language TEXT DEFAULT '',content TEXT DEFAULT '',created_at TEXT NOT NULL,UNIQUE(project_id,path));
+CREATE TABLE IF NOT EXISTS reviews(id INTEGER PRIMARY KEY AUTOINCREMENT,target_kind TEXT NOT NULL,target_id INTEGER,title TEXT DEFAULT '',scores TEXT DEFAULT '{}',overall REAL DEFAULT 0,issues TEXT DEFAULT '[]',summary TEXT DEFAULT '',model TEXT DEFAULT '',created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS agent_runs(id INTEGER PRIMARY KEY AUTOINCREMENT,agent TEXT NOT NULL,task TEXT NOT NULL,status TEXT DEFAULT 'running',input TEXT DEFAULT '',output TEXT DEFAULT '',steps TEXT DEFAULT '[]',score REAL DEFAULT 0,created_at TEXT NOT NULL,finished_at TEXT);
+CREATE TABLE IF NOT EXISTS knowledge_versions(id INTEGER PRIMARY KEY AUTOINCREMENT,knowledge_id INTEGER NOT NULL,version INTEGER DEFAULT 1,title TEXT DEFAULT '',content TEXT DEFAULT '',source_url TEXT DEFAULT '',topic TEXT DEFAULT '',confidence REAL DEFAULT 0,verification_status TEXT DEFAULT '',change TEXT DEFAULT 'created',created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS explored_sites(id INTEGER PRIMARY KEY AUTOINCREMENT,url TEXT NOT NULL,domain TEXT DEFAULT '',title TEXT DEFAULT '',category TEXT DEFAULT 'general',status TEXT DEFAULT 'discovered',value_score REAL DEFAULT 0,summary TEXT DEFAULT '',discovered_at TEXT NOT NULL,learned_at TEXT,UNIQUE(url));
+CREATE TABLE IF NOT EXISTS automation_runs(id INTEGER PRIMARY KEY AUTOINCREMENT,kind TEXT NOT NULL,status TEXT DEFAULT 'running',detail TEXT DEFAULT '',stats TEXT DEFAULT '{}',started_at TEXT NOT NULL,finished_at TEXT);
 '''
 
 INDEXES = '''
@@ -57,6 +67,16 @@ CREATE INDEX IF NOT EXISTS idx_skills_enabled ON skills(enabled);
 CREATE INDEX IF NOT EXISTS idx_learning_sessions_status ON learning_sessions(status);
 CREATE INDEX IF NOT EXISTS idx_learning_topics_status ON learning_topics(status);
 CREATE INDEX IF NOT EXISTS idx_programs_created ON programs(id);
+CREATE INDEX IF NOT EXISTS idx_concept_language ON concept_progress(language);
+CREATE INDEX IF NOT EXISTS idx_concept_status ON concept_progress(status);
+CREATE INDEX IF NOT EXISTS idx_exercises_language ON exercises(language);
+CREATE INDEX IF NOT EXISTS idx_assessments_language ON assessments(language);
+CREATE INDEX IF NOT EXISTS idx_project_files_project ON project_files(project_id);
+CREATE INDEX IF NOT EXISTS idx_reviews_target ON reviews(target_kind,target_id);
+CREATE INDEX IF NOT EXISTS idx_agent_runs_agent ON agent_runs(agent);
+CREATE INDEX IF NOT EXISTS idx_knowledge_versions_item ON knowledge_versions(knowledge_id);
+CREATE INDEX IF NOT EXISTS idx_explored_domain ON explored_sites(domain);
+CREATE INDEX IF NOT EXISTS idx_automation_kind ON automation_runs(kind);
 '''
 
 # Every value used by the UI/backend. Keeping them in one place makes upgrades safe.
@@ -125,6 +145,25 @@ DEFAULTS = {
     # chat ----------------------------------------------------------------------
     'chat_history': '14',
     'system_name': 'NEXUS',
+    # autonomous programming ----------------------------------------------------
+    'autoprogramming_enabled': 'false',
+    'autoprogramming_languages': 'python,javascript,typescript,sql,html,css',
+    'autoprogramming_difficulty': 'beginner',
+    'autoprogramming_interval_seconds': '90',
+    'autoprogramming_concepts_per_cycle': '1',
+    'autoprogramming_use_internet': 'true',
+    'autoprogramming_auto_assess': 'true',
+    # exploration ---------------------------------------------------------------
+    'exploration_categories': 'programming,ai,ml,cybersecurity,science,mathematics,webdev,gamedev,robotics,general',
+    'exploration_interval_seconds': '120',
+    'exploration_sites_per_cycle': '3',
+    # review studio -------------------------------------------------------------
+    'review_auto': 'true',
+    'review_min_score': '70',
+    'review_provider': 'auto',
+    # projects ------------------------------------------------------------------
+    'project_root': '',
+    'project_auto_test': 'true',
 }
 
 def init_db():
@@ -134,13 +173,18 @@ def init_db():
         # Migrate databases created by earlier NEXUS builds.
         for table, columns in {
             'knowledge': [('embedding', 'TEXT'), ('verification_status', "TEXT DEFAULT 'unverified'"),
-                          ('source_domain', 'TEXT'), ('embedding_kind', 'TEXT'), ('session_id', 'INTEGER')],
+                          ('source_domain', 'TEXT'), ('embedding_kind', 'TEXT'), ('session_id', 'INTEGER'),
+                          ('version', 'INTEGER DEFAULT 1'), ('supersedes_id', 'INTEGER'),
+                          ('category', "TEXT DEFAULT ''"), ('last_verified_at', 'TEXT')],
             'tasks': [('priority', 'INTEGER DEFAULT 5'), ('parent_id', 'INTEGER'),
-                      ('mode', "TEXT DEFAULT 'assisted'"), ('attempts', 'INTEGER DEFAULT 0')],
+                      ('mode', "TEXT DEFAULT 'assisted'"), ('attempts', 'INTEGER DEFAULT 0'),
+                      ('progress', 'INTEGER DEFAULT 0'), ('category', "TEXT DEFAULT ''"),
+                      ('agent', "TEXT DEFAULT ''"), ('result', "TEXT DEFAULT ''"),
+                      ('started_at', 'TEXT'), ('finished_at', 'TEXT')],
             'memories': [('embedding_kind', 'TEXT')],
             'web_sources': [('root_id', 'INTEGER'), ('depth', 'INTEGER DEFAULT 0'), ('summary', "TEXT DEFAULT ''"),
                             ('char_count', 'INTEGER DEFAULT 0'), ('chunk_count', 'INTEGER DEFAULT 0'),
-                            ('session_id', 'INTEGER')],
+                            ('session_id', 'INTEGER'), ('category', "TEXT DEFAULT ''")],
             'skills': [('bundles', "TEXT DEFAULT ''"), ('enabled', 'INTEGER DEFAULT 1'), ('triggers', "TEXT DEFAULT ''")],
         }.items():
             existing = {r['name'] for r in db.execute(f'PRAGMA table_info({table})')}

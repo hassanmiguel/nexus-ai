@@ -74,11 +74,56 @@
 ### Interface
 - [x] Full code/cyber-themed rewrite: terminal aesthetic, matrix/grid background
 - [x] Animated NEXUS core sphere with four orbital rings and scan line
-- [x] Pages: Overview, Repo Lab, URL Learn, Skills, AI Chat, Code Studio, Auto Research, Knowledge, Memory, Graph, Tasks, Activity, Experiments, Analytics, Providers, Permissions, Settings
+- [x] Pages: Overview, Dashboard, Auto Programming, Review Studio, Projects, Code Playground, AI Agents, Repo Lab, URL Learn, Skills, AI Chat, Code Studio, Auto Research, Knowledge, Memory, Graph, Tasks, Activity, Experiments, Analytics, Providers, Permissions, Settings
 - [x] Provider switcher, live WebSocket activity stream, toasts, responsive layout
 - [x] Dashboard views for memory, topic clusters, proposals, experiments and analytics
 - [x] URL Learn and Skill Vault pages with progress polling, packs, search, detail inspectors and toggles
 - [x] Code Studio page with request/template matching, program library, file tabs, verification report, run output and HTML preview
+
+### Auto Programming (Auto Learn)
+- [x] Language catalog (Python, JavaScript, TypeScript, Java, C++, C#, Rust, Go, PHP, SQL, HTML, CSS) with concepts and docs
+- [x] Concept seeding, study material via Wikipedia fallback, knowledge storage and self-improvement curation
+- [x] Exercise generation, sandbox execution and verification with one conservative repair attempt
+- [x] Mastery tracking, difficulty levels (beginner/intermediate/advanced/expert), per-language skills
+- [x] Code Studio program artifact mirroring for every verified exercise
+- [x] Auto-assessment generation and solving for executable languages
+- [x] Background worker with pause/resume/stop, status, history and rerun
+- [x] Real task manager integration and dashboard charts
+
+### Review Studio
+- [x] Deterministic 8-dimension scoring (quality, correctness, performance, security, accessibility, responsiveness, design, bugs)
+- [x] Static analyzers, weighted overall score and issue list with severity
+- [x] Sandbox run/test execution that adjusts correctness/bugs scores
+- [x] Conservative auto-fix (doctype, lang, charset, viewport, alt text, document title)
+- [x] Sandboxed `iframe.srcdoc` preview with CSP and console-bridge (`postMessage`)
+- [x] Save review, history, ZIP export and AI narrative (optional, never changes scores)
+
+### Projects
+- [x] 5 archetypes (static site, chat UI, FastAPI API, Python CLI, data dashboard)
+- [x] Real file generation, architecture plan, dependencies and structure
+- [x] Sandbox tests, auto-review, history and ZIP export
+- [x] Native-confirmation delete with orphan cleanup
+
+### Code Playground
+- [x] Multi-language sandboxed execution (Python, JavaScript, PHP, SQL, C, C++, Rust)
+- [x] Per-language examples with draft cache and entry-file selection
+- [x] Self-check endpoint and process-jail with timeout/output/memory limits
+
+### AI Agents
+- [x] Seven specialist agents (programming, research, cybersecurity education, mathematics, web development, data analysis, software testing)
+- [x] Safe math AST evaluator, cybersecurity refusal policy, team collaboration
+- [x] Run persistence, stats and catalog (all 7 rendered even with no runs)
+
+### Dashboard and exploration
+- [x] Real-data dashboard: overview, knowledge growth, programming skills, learning activity, exploration, task completion, automation, system state
+- [x] Category discovery, domain allowlist approval, paywall/CAPTCHA detection without bypass
+- [x] `explored_sites` persistence and stats
+
+### Self-improvement
+- [x] Version snapshots, topic normalization, categorisation, duplicate linking, confidence recomputation
+- [x] Outdated marking, organisation pass and explain endpoint
+- [x] `after_store` curation for every knowledge insert (including autonomous learning)
+- [x] Endless-loop guardrails for the research agent and autonomous learner
 
 ## Remaining engineering work
 

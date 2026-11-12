@@ -123,7 +123,15 @@ Tool console and history are on the Permissions page. Tool runs return structure
 14. **URL learning** — robots-respecting web-page ingest with starter packs, chunk storage, search and per-page delete.
 15. **Skill vault** — 307 offline Antigravity skills plus permission-gated GitHub refresh, bundles, toggles and chat guidance.
 16. **Program Forge / Code Studio** — 38 offline runnable templates, evidence-based self-test verification, local-model code generation, file viewer, sandboxed HTML preview and explicit program runs.
-17. **Scalable retrieval** — two-stage lexical shortlist plus semantic rerank keeps chat fast as the repo index grows past 10,000 chunks; skill vectors are cached.
+17. **Scalable retrieval** - two-stage lexical shortlist plus semantic rerank keeps chat fast as the repo index grows past 10,000 chunks; skill vectors are cached.
+18. **Auto Programming** - concept seeding across 13 languages, Wikipedia-backed study, sandboxed exercise generation/verification, mastery tracking, difficulty levels and auto-assessment.
+19. **Review Studio** - deterministic 8-dimension code scoring, sandboxed run/test, conservative auto-fix, sandboxed CSP preview with console bridge, save/history and ZIP export.
+20. **Projects** - 5 archetypes with real file generation, architecture plans, sandbox tests, auto-review and ZIP export.
+21. **Code Playground** - multi-language sandboxed execution with per-language examples and self-check.
+22. **AI Agents** - seven specialist agents with safe math, cybersecurity refusal policy and team collaboration.
+23. **Dashboard** - real-data charts for knowledge growth, programming skills, learning activity, exploration and task completion.
+24. **Autonomous exploration** - category discovery, domain allowlist approval, paywall/CAPTCHA detection without bypass.
+25. **Self-improvement** - version snapshots, topic normalization, duplicate linking, confidence recomputation and organisation passes.
 
 ## Research safety and limits
 
@@ -183,5 +191,14 @@ pip install llama-cpp-python
 - `GET|DELETE /api/programs/{id}`, `GET /api/programs/{id}/file?name=...`, `GET /api/programs/{id}/raw/{name}`
 - `POST /api/programs/{id}/verify`, `POST /api/programs/{id}/run`
 - `GET /api/experiments`, `GET|POST /api/settings`
+- `GET /api/dashboard`, `GET /api/dashboard?days=30`
+- `GET /api/autoprogramming/status`, `POST /api/autoprogramming/study`, `GET /api/autoprogramming/concepts`, `GET /api/autoprogramming/exercises`, `POST /api/autoprogramming/exercises/{id}/run`, `POST /api/autoprogramming/start|pause|resume|stop`
+- `POST /api/review/analyze`, `POST /api/review/run`, `POST /api/review/fix`, `POST /api/review/preview`, `POST /api/review/save`, `GET /api/review/history`, `POST /api/review/export`
+- `POST /api/projects`, `GET /api/projects`, `GET|DELETE /api/projects/{id}`, `POST /api/projects/{id}/test`, `POST /api/projects/{id}/review`, `POST /api/projects/{id}/export`
+- `POST /api/playground/run`, `GET /api/playground/self-check`, `GET /api/playground/meta`
+- `GET /api/agents`, `POST /api/agents/run`, `POST /api/agents/team`, `GET /api/agents/runs`, `GET /api/agents/stats`
+- `GET /api/explore/stats`, `GET /api/explore/allowlist`, `POST /api/explore/approve`, `POST /api/explore/discover`, `POST /api/explore/url`, `POST /api/explore`
+- `POST /api/assessments`, `GET /api/assessments`, `POST /api/assessments/{id}/solve`, `GET /api/assessments/{id}/compare`, `GET /api/assessments/stats`
+- `GET /api/self-improve/stats`, `POST /api/self-improve/organize`, `GET /api/self-improve/versions/{id}`, `GET /api/self-improve/explain/{id}`
 - `GET /api/tools`, `POST /api/tools/run`, `GET|POST /api/permissions`, `GET /api/audit`, `GET /api/tool-runs`
 - `WS /ws`

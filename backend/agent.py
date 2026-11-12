@@ -1,8 +1,22 @@
 import asyncio
-from .database import connect,now,event,setting,set_setting
+import re
+from datetime import datetime, timedelta, timezone
+from .database import connect,now,event,read_bool,setting,set_setting
 from .research import research_objective
 from .providers import generate
 from .memory import retrieve_experiences,save_experience
+
+def _clean_objective(text):
+    """Reject echoed prompt fragments and other degenerate objectives."""
+    text = re.sub(r'\s+', ' ', str(text or '')).strip().strip('"\'` ')
+    text = re.sub(r'^(?:research\s+)?objective\s*:\s*', '', text, flags=re.I).strip()
+    lowered = text.lower()
+    if any(marker in lowered for marker in ('past lessons', 'existing knowledge', 'no prior knowledge',
+                                            'existing objectives', 'return only the objective')):
+        return ''
+    if len(text) < 13 or len(text.split()) < 3:
+        return ''
+    return text[:200]
 
 class Agent:
     def __init__(self):self.running=False;self.paused=False;self.worker=None;self.current_task=None;self.mode='assisted'
@@ -30,17 +44,42 @@ class Agent:
             db.execute("UPDATE tasks SET status='queued',updated_at=?,notes=CASE WHEN notes='' THEN 'Recovered after application restart' ELSE notes||' | recovered after restart' END WHERE status IN ('running','interrupted')",(now(),))
         event('recovery','Recovered interrupted research tasks from the previous session.')
     async def _autoplan(self):
-        with connect() as db:recent=db.execute('SELECT topic,title FROM knowledge ORDER BY id DESC LIMIT 18').fetchall()
+        # Research needs the internet permission; without it every objective
+        # would fail immediately and flood the task table.
+        if not read_bool('permission_internet'):
+            return
+        cutoff = (datetime.now(timezone.utc) - timedelta(minutes=30)).isoformat()
+        with connect() as db:
+            recent=db.execute('SELECT topic,title FROM knowledge ORDER BY id DESC LIMIT 18').fetchall()
+            recent_tasks=[dict(r) for r in db.execute(
+                'SELECT objective,status,created_at FROM tasks ORDER BY id DESC LIMIT 25').fetchall()]
+            failed_recent=db.execute(
+                "SELECT COUNT(*) n FROM tasks WHERE status='failed' AND created_at>=?",(cutoff,)).fetchone()['n']
+        # Circuit breaker: a run of failures usually means the network or the
+        # allowlist is unavailable. Idle instead of creating more doomed tasks.
+        if failed_recent >= 5:
+            return
         known='\n'.join(f"{x['topic']}: {x['title']}" for x in recent)
+        existing='\n'.join(x['objective'] for x in recent_tasks) or 'None.'
         experiences=await retrieve_experiences('successful and failed research strategies',4)
         exp='\n'.join(x['content'][:300] for x in experiences)
-        prompt=f'''Create ONE novel, useful research objective to expand this knowledge, prioritizing gaps and avoiding repetition. Return only the objective under 25 words. Existing knowledge:\n{known or 'No prior knowledge.'}\nPast lessons:\n{exp}'''
-        objective=(await generate(prompt)).strip().strip('"')
-        if len(objective)>12 and objective.lower() not in known.lower():await self.add_task(objective,priority=7,mode=self.mode)
+        prompt=f'''Create ONE novel, useful research objective to expand this knowledge, prioritizing gaps and avoiding repetition. Return only the objective under 25 words. Existing knowledge:\n{known or 'No prior knowledge.'}\nExisting objectives (do not repeat any of these):\n{existing}\nPast lessons (context only; never copy this text):\n{exp}'''
+        objective=_clean_objective(await generate(prompt))
+        if not objective:
+            return
+        taken={re.sub(r'\s+',' ',x['objective']).strip().lower() for x in recent_tasks}
+        if objective.lower() in taken:
+            return
+        if len(objective)>12 and len(objective.split())>=3:
+            await self.add_task(objective,priority=7,mode=self.mode)
     async def _loop(self):
         try:
             while self.running:
                 if self.paused:await asyncio.sleep(1);continue
+                if not read_bool('permission_internet'):
+                    # Queued objectives stay queued until the permission returns.
+                    await asyncio.sleep(max(10,int(setting('research_interval_seconds','45'))))
+                    continue
                 with connect() as db:task=db.execute("SELECT * FROM tasks WHERE status='queued' ORDER BY priority DESC,id LIMIT 1").fetchone()
                 if task:
                     self.current_task=task['objective'];mode=task['mode'] or self.mode
