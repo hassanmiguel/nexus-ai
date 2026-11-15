@@ -48,6 +48,15 @@ from . import intelligence as intelligence_engine
 from . import sandbox
 
 app = FastAPI(title='NEXUS AI', version=APP_VERSION)
+
+@app.middleware('http')
+async def no_cache_middleware(request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith('/static') or request.url.path == '/':
+        response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+    return response
 app.add_middleware(
     CORSMiddleware,
     allow_origins=['http://127.0.0.1:8000', 'http://localhost:8000'],
