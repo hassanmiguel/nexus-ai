@@ -45,6 +45,6 @@ if errorlevel 1 (
   echo.
 )
 echo Starting NEXUS AI at http://127.0.0.1:8000
-start "" http://127.0.0.1:8000
+start "" "http://127.0.0.1:8000/?v=0.6.2"
 python run_nexus.py --host 127.0.0.1 --port 8000 --reload
 pause
