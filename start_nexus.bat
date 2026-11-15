@@ -2,8 +2,9 @@
 setlocal
 title NEXUS AI Launcher
 cd /d "%~dp0"
-echo ========================================
-echo          NEXUS AI - LOCAL AGENT
+echo Stopping any previous NEXUS instance on port 8000...
+for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":8000" ^| findstr "LISTENING"') do taskkill /PID %%a /F >nul 2>nul
+if exist "backend\__pycache__" rmdir /s /q "backend\__pycache__"
 echo ========================================
 where python >nul 2>nul
 if errorlevel 1 (
@@ -45,5 +46,5 @@ if errorlevel 1 (
 )
 echo Starting NEXUS AI at http://127.0.0.1:8000
 start "" http://127.0.0.1:8000
-python run_nexus.py --host 127.0.0.1 --port 8000
+python run_nexus.py --host 127.0.0.1 --port 8000 --reload
 pause
