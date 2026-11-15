@@ -164,6 +164,10 @@ DEFAULTS = {
     # projects ------------------------------------------------------------------
     'project_root': '',
     'project_auto_test': 'true',
+    # image generation ----------------------------------------------------------
+    'image_provider_url': '',
+    'image_provider_key': '',
+    'image_model': '',
 }
 
 def init_db():

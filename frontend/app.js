@@ -10,7 +10,7 @@ const titles = {
   autonomous: 'Autonomous Learning',
   learning: 'Autonomous Research', knowledge: 'Knowledge Base', memory: 'Memory Manager',
   graph: 'Knowledge Graph', history: 'Learning History', tasks: 'Task Manager',
-  activity: 'Activity Stream', monitor: 'System Monitor',
+  activity: 'Activity Stream', monitor: 'System Monitor', storage: 'Storage', intelligence: 'Intelligence Center',
   experiments: 'Experiments', analytics: 'Analytics', models: 'Providers',
   permissions: 'Permissions', settings: 'Settings',
   dashboard: 'Dashboard', autoprogramming: 'Auto Programming',
@@ -48,6 +48,8 @@ const PAGE_LOADERS = {
   tasks: () => loadTasks(),
   activity: () => loadEvents(),
   monitor: () => loadMonitor(),
+  storage: () => loadStorage(),
+  intelligence: () => loadIntelligence(),
   experiments: () => loadProposals(),
   analytics: () => loadAnalytics(),
   models: () => loadProviders(),
@@ -1687,6 +1689,71 @@ async function loadMonitor() {
       '<div class="empty">No warnings recorded.</div>';
     if ($('monEventsList')) $('monEventsList').innerHTML = events.slice(0, 12).map(eventHTML).join('') ||
       '<div class="empty">No events recorded.</div>';
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+/* -------------------------------------------------------------------- storage */
+function fmtBytes(bytes) {
+  const b = Number(bytes || 0);
+  if (b < 1024) return b + ' B';
+  if (b < 1024 * 1024) return (b / 1024).toFixed(1) + ' KB';
+  if (b < 1024 * 1024 * 1024) return (b / (1024 * 1024)).toFixed(1) + ' MB';
+  return (b / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
+}
+async function loadIntelligence() {
+  try {
+    const [s, reg] = await Promise.all([api('/status'), api('/intelligence/registry')]);
+    if ($('icEngine')) $('icEngine').textContent = String((s.provider || {}).label || 'NEXUS CORE').toUpperCase();
+    if ($('icEngineSub')) $('icEngineSub').textContent = (s.provider || {}).online ? 'ready' : 'offline';
+    if ($('icKnowledge')) $('icKnowledge').textContent = num(s.knowledge_count);
+    if ($('icSkills')) $('icSkills').textContent = num(reg.available);
+    if ($('icConvos')) $('icConvos').textContent = num(s.conversation_count);
+    if ($('icCapCount')) $('icCapCount').textContent = (reg.available || 0) + '/' + (reg.total || 0);
+    const caps = reg.capabilities || [];
+    if ($('icCaps')) {
+      $('icCaps').innerHTML = caps.map((c) => monitorRow(
+        c.name + (c.available ? '' : ' (unavailable)'), c.module
+      )).join('') || '<div class="empty">No capabilities registered.</div>';
+    }
+  } catch (e) { toast(e.message, 'error'); }
+}
+async function classifyIntent() {
+  const input = $('icIntentInput');
+  const msg = (input && input.value || '').trim();
+  if (!msg) return toast('Enter a request first.', 'warn');
+  try {
+    const r = await api('/intelligence/classify', { method: 'POST', body: JSON.stringify({ message: msg }) });
+    const caps = (r.activated || []).map((c) => (c.available ? '✓' : '✗') + ' ' + c.name).join(', ') || 'none';
+    const missing = (r.missing_capabilities || []).join(', ');
+    if ($('icIntentResult')) {
+      $('icIntentResult').innerHTML =
+        '<p><strong>Activated:</strong> ' + esc(caps) + '</p>' +
+        (missing ? '<p class="muted">Missing/unavailable: ' + esc(missing) + '</p>' : '') +
+        '<p class="muted">Multi-skill: ' + (r.multi_skill ? 'yes' : 'no') + '</p>';
+    }
+  } catch (e) { toast(e.message, 'error'); }
+}
+async function loadStorage() {
+  try {
+    const s = await api('/storage');
+    if ($('stDataSize')) $('stDataSize').textContent = fmtBytes(s.data_total_bytes);
+    if ($('stDbSize')) $('stDbSize').textContent = fmtBytes(s.database_bytes);
+    const disk = s.disk || {};
+    if ($('stDiskUsed')) $('stDiskUsed').textContent = fmtBytes(disk.used);
+    if ($('stDiskFree')) $('stDiskFree').textContent = fmtBytes(disk.free);
+    const total = Number(disk.total || 0);
+    const used = Number(disk.used || 0);
+    const pct = total > 0 ? Math.min(100, (used / total) * 100) : 0;
+    if ($('stDiskPct')) $('stDiskPct').textContent = pct.toFixed(1) + '% USED';
+    if ($('stDiskFill')) $('stDiskFill').style.width = pct.toFixed(1) + '%';
+    if ($('stDiskText')) $('stDiskText').textContent =
+      fmtBytes(used) + ' used of ' + fmtBytes(total) + ' on ' + (s.data_dir || '');
+    const breakdown = s.breakdown || {};
+    const rows = Object.entries(breakdown).sort((a, b) => b[1] - a[1]);
+    if ($('stBreakdown')) {
+      $('stBreakdown').innerHTML = rows.map(([k, v]) => monitorRow(k, fmtBytes(v))).join('') ||
+        '<div class="empty">No data directory contents.</div>';
+    }
   } catch (e) { toast(e.message, 'error'); }
 }
 

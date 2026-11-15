@@ -41,6 +41,8 @@
       <button class="nav" data-page="tasks"><i>☷</i><span>Tasks</span><b>13</b></button>
       <button class="nav" data-page="activity"><i>⌗</i><span>Activity</span><b>14</b></button>
       <button class="nav" data-page="monitor"><i>◫</i><span>System Monitor</span><b>15</b></button>
+      <button class="nav" data-page="storage"><i>◧</i><span>Storage</span><b>15a</b></button>
+      <button class="nav" data-page="intelligence"><i>🧠</i><span>Intelligence Center</span><b>15b</b></button>
       <button class="nav" data-page="experiments"><i>⚗</i><span>Experiments</span><b>16</b></button>
       <button class="nav" data-page="analytics"><i>▥</i><span>Analytics</span><b>17</b></button>
       <button class="nav" data-page="models"><i>⬡</i><span>Providers</span><b>18</b></button>
@@ -626,6 +628,55 @@
       <div class="grid2">
         <div class="panel"><div class="panelhead"><div><label>RECENT ERRORS</label><h3>Warnings & failures</h3></div></div><div id="monErrors" class="eventlist"></div></div>
         <div class="panel"><div class="panelhead"><div><label>RECENT ACTIVITY</label><h3>Event stream</h3></div><button class="textbtn" onclick="showPage('activity')">All events ↗</button></div><div id="monEventsList" class="eventlist"></div></div>
+      </div>
+    </section>
+
+<!-- STORAGE -->
+    <section id="storage" class="page">
+      <div class="sectionintro">
+        <div><div class="eyebrow cyan">DISK & DATA</div><h2>Storage</h2><p>Local data directory usage, database size and disk capacity for the NEXUS AI runtime. Everything stays on your machine.</p></div>
+        <button class="secondary" onclick="loadStorage()">Refresh ↻</button>
+      </div>
+      <div class="metrics">
+        <div class="metric"><label>DATA DIR SIZE</label><strong id="stDataSize">—</strong><small>all local data</small></div>
+        <div class="metric"><label>DATABASE</label><strong id="stDbSize">—</strong><small>sqlite + wal</small></div>
+        <div class="metric"><label>DISK USED</label><strong id="stDiskUsed">—</strong><small>on data drive</small></div>
+        <div class="metric"><label>DISK FREE</label><strong id="stDiskFree">—</strong><small>available space</small></div>
+      </div>
+      <div class="panel" style="margin-top:14px">
+        <div class="panelhead"><div><label>DISK CAPACITY</label><h3>Usage bar</h3></div><span class="tag" id="stDiskPct">—</span></div>
+        <div class="storage-bar"><div class="storage-fill" id="stDiskFill" style="width:0%"></div></div>
+        <p class="muted smallgap" id="stDiskText">—</p>
+      </div>
+      <div class="panel" style="margin-top:14px">
+        <div class="panelhead"><div><label>BREAKDOWN</label><h3>Data directory contents</h3></div></div>
+        <div id="stBreakdown" class="monitor-grid"></div>
+      </div>
+    </section>
+
+    <!-- INTELLIGENCE CENTER -->
+    <section id="intelligence" class="page">
+      <div class="sectionintro">
+        <div><div class="eyebrow cyan">CAPABILITY ROUTING</div><h2>Intelligence Center</h2><p>Active engine, available skills, knowledge retrieval status and capability routing for the NEXUS AI runtime.</p></div>
+        <button class="secondary" onclick="loadIntelligence()">Refresh ↻</button>
+      </div>
+      <div class="metrics">
+        <div class="metric"><label>ACTIVE ENGINE</label><strong id="icEngine">—</strong><small id="icEngineSub">provider</small></div>
+        <div class="metric"><label>KNOWLEDGE</label><strong id="icKnowledge">—</strong><small>stored records</small></div>
+        <div class="metric"><label>SKILLS</label><strong id="icSkills">—</strong><small>available capabilities</small></div>
+        <div class="metric"><label>CONVERSATIONS</label><strong id="icConvos">—</strong><small>threads</small></div>
+      </div>
+      <div class="panel" style="margin-top:14px">
+        <div class="panelhead"><div><label>CAPABILITY REGISTRY</label><h3>Installed skills</h3></div><span class="tag" id="icCapCount">—</span></div>
+        <div id="icCaps" class="monitor-grid"></div>
+      </div>
+      <div class="panel" style="margin-top:14px">
+        <div class="panelhead"><div><label>INTENT TESTER</label><h3>Classify a request</h3></div></div>
+        <div class="searchrow">
+          <input id="icIntentInput" placeholder="Type a request to see activated capabilities…">
+          <button class="secondary" onclick="classifyIntent()">Classify</button>
+        </div>
+        <div id="icIntentResult" class="prose"></div>
       </div>
     </section>
 

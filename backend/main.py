@@ -4,7 +4,7 @@ import json
 import mimetypes
 import pathlib
 import platform
-import tempfile
+import shutil
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -44,7 +44,7 @@ from . import projects as project_builder
 from . import agents as agent_team
 from . import review as review_studio
 from . import proglang
-from . import selfimprove
+from . import intelligence as intelligence_engine
 from . import sandbox
 
 app = FastAPI(title='NEXUS AI', version=APP_VERSION)
@@ -75,6 +75,7 @@ SETTINGS_KEYS = [
     # exploration + review + projects
     'exploration_categories', 'exploration_interval_seconds', 'exploration_sites_per_cycle',
     'review_auto', 'review_min_score', 'review_provider', 'project_root', 'project_auto_test',
+    'image_provider_url', 'image_provider_key', 'image_model',
 ]
 
 
@@ -152,6 +153,9 @@ class Settings(BaseModel):
     review_provider: str | None = Field(default=None, pattern='^(auto|deterministic)$')
     project_root: str | None = None
     project_auto_test: bool | None = None
+    image_provider_url: str | None = None
+    image_provider_key: str | None = None
+    image_model: str | None = None
 
 
 class ProgramRequest(BaseModel):
@@ -423,6 +427,69 @@ async def stats():
 @app.get('/api/hardware')
 async def hardware():
     return hardware_profile()
+
+
+@app.get('/api/intelligence/registry')
+async def intelligence_registry():
+    return {'capabilities': intelligence_engine.skill_registry(),
+            'available': intelligence_engine.available_skills_count(),
+            'total': len(intelligence_engine.skill_registry())}
+
+
+@app.post('/api/intelligence/classify')
+async def intelligence_classify(body: dict):
+    message = str(body.get('message', '') if isinstance(body, dict) else '')
+    return intelligence_engine.classify_intent(message)
+
+
+@app.get('/api/storage')
+async def storage_info():
+    from .config import DATA_DIR, DB_PATH, ROOT
+    root_path = ROOT
+    data_path = DATA_DIR
+    try:
+        du = shutil.disk_usage(str(data_path))
+        disk = {'total': du.total, 'used': du.used, 'free': du.free}
+    except Exception as e:
+        disk = {'total': 0, 'used': 0, 'free': 0, 'error': str(e)}
+    breakdown = {}
+    total_data = 0
+    try:
+        for child in sorted(data_path.iterdir(), key=lambda p: p.name.lower()):
+            if child.is_file():
+                size = child.stat().st_size
+                breakdown[child.name] = size
+                total_data += size
+            elif child.is_dir():
+                size = 0
+                for p in child.rglob('*'):
+                    if p.is_file():
+                        try:
+                            size += p.stat().st_size
+                        except OSError:
+                            pass
+                breakdown[child.name + '/'] = size
+                total_data += size
+    except Exception as e:
+        breakdown['error'] = str(e)
+    db_size = 0
+    try:
+        if DB_PATH.exists():
+            db_size = DB_PATH.stat().st_size
+            for suffix in ('-wal', '-shm'):
+                p = DB_PATH.with_name(DB_PATH.name + suffix)
+                if p.exists():
+                    db_size += p.stat().st_size
+    except Exception:
+        pass
+    return {
+        'root': str(root_path),
+        'data_dir': str(data_path),
+        'data_total_bytes': total_data,
+        'database_bytes': db_size,
+        'breakdown': breakdown,
+        'disk': disk,
+    }
 
 
 @app.get('/api/export')

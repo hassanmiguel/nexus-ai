@@ -609,6 +609,8 @@ footer span:last-child{margin-left:auto}
 .graph-stat b{color:var(--green);font-weight:600;overflow-wrap:anywhere;text-align:right}
 .history-filters{flex-wrap:wrap}
 .monitor-grid{display:flex;flex-direction:column;margin-top:10px}
+.storage-bar{height:16px;border-radius:8px;background:#061014;border:1px solid #102730;overflow:hidden;margin-top:8px}
+.storage-fill{height:100%;background:linear-gradient(90deg,var(--green-dim),var(--green),var(--cyan));box-shadow:0 0 12px #39ff9a55;transition:width .4s ease}
 @media(max-width:900px){
   .auto-hero{grid-template-columns:1fr;gap:16px}
   .auto-config{grid-template-columns:1fr 1fr}

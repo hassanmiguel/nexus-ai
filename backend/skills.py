@@ -18,6 +18,13 @@ from pathlib import Path
 from .database import connect, event, now, read_bool, setting, set_setting
 from .llm import local_embed
 from .textutil import clip, lexical_score
+from .proglang import build_exercise
+from .review import review_files
+from .sandbox import run_code
+from .explore import explore_url
+
+import hashlib
+from typing import Dict, List, Optional, Any
 
 BUILTIN_FILE = Path(__file__).with_name('skills_builtin.json')
 DEFAULT_REPO = 'https://github.com/rmyndharis/antigravity-skills'
@@ -454,3 +461,720 @@ def skills_context(query, limit=3):
     if (setting('skills_auto_context', 'true') or 'true').lower() != 'true':
         return ''
     return format_skill_context(retrieve_skills(query, limit=limit))
+# --------------------------------------------------------------------------- #
+# Enhanced Skill Management with Autonomous Learning
+# --------------------------------------------------------------------------- #
+
+class SkillManager:
+    def __init__(self):
+        self.skill_cache = {}
+        self.context_cache = {}
+        self.autonomous_learning_enabled = True
+    
+    def learn_from_webpage(self, url: str, content: str, context: str = ""):
+        """Learn from a webpage and create relevant skills"""
+        try:
+            concepts = self._extract_concepts(content, context)
+            skills_created = []
+            
+            for concept in concepts:
+                skill_id = f"web_{hash(concept) % 10000}"
+                skill_data = {
+                    'skill_id': skill_id,
+                    'name': f"Web Concept: {concept[:50]}",
+                    'description': f"Concepts learned from {url}",
+                    'category': 'web_learning',
+                    'tags': ['web', 'learning', 'autonomous'],
+                    'triggers': ['learn', concept],
+                    'content': f"Concepts: {concept}\n\nSource: {url}",
+                    'source': url,
+                    'source_path': url,
+                    'enabled': True,
+                    'created_at': now(),
+                    'updated_at': now()
+                }
+                self._save_skill(skill_data)
+                skills_created.append(skill_id)
+            
+            event('skills', f"Learned {len(skills_created)} skills from {url}")
+            return skills_created
+            
+        except Exception as e:
+            event('warning', f"Failed to learn from webpage {url}: {e}")
+            return []
+    
+    def generate_code_from_skill(self, skill_id: str, requirements: str, language: str = "python") -> str:
+        """Generate code based on a specific skill and user requirements"""
+        skill = self.get_skill(skill_id)
+        if not skill:
+            return f"Error: Skill '{skill_id}' not found"
+        
+        # Use the existing programmer module to build an exercise
+        try:
+            # Extract a concept from the skill
+            concept = skill['content'][:200]
+            
+            # Build an exercise using the proglang module
+            exercise = build_exercise(skill.get('language', 'python'), concept, 'beginner')
+            
+            if exercise:
+                return self._format_code_output(exercise, requirements)
+                
+        except Exception as e:
+            event('warning', f"Code generation failed: {e}")
+        
+        # Fallback code templates based on skill content
+        return self._template_based_generation(skill, requirements, language)
+    
+    def generate_image_from_skill(self, skill_id: str, scene_description: str) -> Dict[str, Any]:
+        """Generate image description or prompt based on a skill"""
+        skill = self.get_skill(skill_id)
+        if not skill:
+            return {'error': f"Skill '{skill_id}' not found"}
+        
+        prompt = f"""
+        Create an image representing: {scene_description}
+        
+        Style: {skill['category']}
+        Theme: {', '.join(skill['tags'][:3])}
+        Context: {skill['content'][:200]}
+        Generate a detailed image description for visual generation.
+        """
+        
+        return {
+            'skill_id': skill_id,
+            'skill_name': skill['name'],
+            'prompt': prompt,
+            'category': skill['category'],
+            'suggested_prompt': self._create_image_prompt(skill, scene_description)
+        }
+    
+    def autonomous_skills_learning(self, query: str, limit: int = 5) -> List[Dict]:
+        """Use autonomous learning to discover and learn new skills"""
+        skills = self.retrieve_skills(query, limit)
+        learned_skills = []
+        
+        for skill in skills:
+            if self._should_autonomously_learn(skill, query):
+                try:
+                    result = explore_url(skill['source'], category=skill['category'], store=True)
+                    if result.get('ok'):
+                        new_skill = self._create_learning_skill(result, skill['skill_id'])
+                        learned_skills.append(new_skill)
+                except Exception as e:
+                    event('warning', f"Autonomous learning failed: {e}")
+        
+        return learned_skills
+    
+    def apply_skill_to_task(self, skill_id: str, task_description: str) -> Dict[str, Any]:
+        """Apply a skill to solve a specific task"""
+        skill = self.get_skill(skill_id)
+        if not skill:
+            return {'error': f"Skill '{skill_id}' not found"}
+        
+        skill_category = skill['category'].lower()
+        
+        if skill_category == 'programming':
+            return self._apply_programming_skill(skill, task_description)
+        elif skill_category == 'web_learning':
+            return self._apply_web_learning_skill(skill, task_description)
+        elif skill_category == 'artificial_intelligence':
+            return self._apply_ai_skill(skill, task_description)
+        elif skill_category == 'cybersecurity':
+            return self._apply_security_skill(skill, task_description)
+        else:
+            return self._apply_generic_skill(skill, task_description)
+    
+    def _should_autonomously_learn(self, skill: Dict, query: str) -> bool:
+        """Determine if a skill should be autonomously learned"""
+        if not skill.get('enabled', True):
+            return False
+        
+        skill_text = ' '.join([skill['name'], skill['description'], ' '.join(skill['tags']), skill['category']])
+        query_words = query.lower().split()
+        
+        relevance_score = sum(1 for word in query_words if word in skill_text.lower())
+        if relevance_score < 1:
+            return False
+        
+        if len(skill.get('content', '')) < 100:
+            return False
+        
+        return True
+    
+    def _create_learning_skill(self, learning_result: Dict, original_skill_id: str) -> Dict:
+        """Create a new skill based on autonomous learning"""
+        new_id = f"learn_{original_skill_id}_{now().replace(':', '_')}"
+        
+        skill_data = {
+            'skill_id': new_id,
+            'name': f"Learned: {learning_result.get('title', 'New Concept')}",
+            'description': f"Skill learned through autonomous exploration: {learning_result.get('url', '')}",
+            'category': learning_result.get('category', 'autonomous_learning'),
+            'tags': ['autonomous', 'learned', 'exploration'],
+            'triggers': ['learn', 'explore', 'autonomous'],
+            'content': f"Concept: {learning_result.get('summary', '')}\n\nSource: {learning_result.get('url', '')}",
+            'source': learning_result.get('url', ''),
+            'source_path': f"learned_from_{original_skill_id}",
+            'enabled': True,
+            'created_at': now(),
+            'updated_at': now()
+        }
+        
+        self._save_skill(skill_data)
+        return skill_data
+    
+    def _create_image_prompt(self, skill: Dict, scene_description: str) -> str:
+        """Create a detailed prompt for image generation"""
+        base_prompt = f"""
+        {scene_description}
+        
+        Style: {skill['category']}
+        Theme: {', '.join(skill['tags'][:3])}
+        Mood: {self._get_mood_from_content(skill['content'])}
+        Composition: {self._get_composition_from_category(skill['category'])}
+        Details: {skill['content'][:300]}
+        """
+        
+        return base_prompt.strip()
+    
+    def _get_mood_from_content(self, content: str) -> str:
+        """Extract mood/emotion from content"""
+        moods = {
+            'happy': ['joy', 'happy', 'pleased', 'delighted'],
+            'sad': ['sad', 'melancholy', 'grief', 'sorrow'],
+            'angry': ['angry', 'furious', 'irate', 'mad'],
+            'calm': ['calm', 'peaceful', 'tranquil', 'serene'],
+            'excited': ['excited', 'enthusiastic', 'energetic', 'thrilled'],
+            'mysterious': ['mysterious', 'enigmatic', 'arcane', 'hidden']
+        }
+        
+        content_lower = content.lower()
+        for mood, keywords in moods.items():
+            if any(keyword in content_lower for keyword in keywords):
+                return mood
+        return 'neutral'
+    
+    def _get_composition_from_category(self, category: str) -> str:
+        """Get composition suggestions based on category"""
+        compositions = {
+            'programming': 'Clean code editor interface with syntax highlighting',
+            'web_learning': 'Web page with browser window and navigation',
+            'artificial_intelligence': 'AI brain diagram or neural network visualization',
+            'cybersecurity': 'Security shield or lock with code patterns',
+            'science': 'Scientific visualization or data chart',
+            'general': 'Professional workspace with tools and documents'
+        }
+        return compositions.get(category, 'Professional workspace layout')
+
+    def _extract_concepts(self, content: str, context: str) -> List[str]:
+        """Extract key concepts from content"""
+        concepts = []
+        
+        # Extract technical terms and programming concepts
+        tech_patterns = [
+            r'\b(?:function|method|class|interface|api|database|algorithm)\s+\w+',
+            r'\b(?:python|javascript|java|cpp|typescript|php|sql)\s+(?:\w+\s*)+',
+            r'\b(?:html|css|react|vue|angular|svelte)\s+(?:\w+\s*)+',
+            r'\b(?:git|github|docker|kubernetes|aws|azure)\s+(?:\w+\s*)+'
+        ]
+        
+        for pattern in tech_patterns:
+            matches = re.findall(pattern, content, re.IGNORECASE)
+            concepts.extend(matches[:3])
+        
+        # Extract from context if available
+        if context:
+            context_concepts = self._extract_concepts(context, "")
+            concepts.extend(context_concepts[:2])
+        
+        # Deduplicate and clean concepts
+        unique_concepts = []
+        for concept in concepts:
+            cleaned = concept.strip()
+            if cleaned and cleaned not in unique_concepts:
+                unique_concepts.append(cleaned)
+        
+        return unique_concepts[:5]
+
+    def _save_skill(self, skill_data: Dict):
+        """Save a skill to the database"""
+        with connect() as db:
+            db.execute(
+                'INSERT INTO skills(skill_id,name,description,category,tags,triggers,bundles,content,source,source_path,enabled,created_at,updated_at) '
+                'VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?) '
+                'ON CONFLICT(skill_id) DO UPDATE SET name=excluded.name,description=excluded.description,'
+                'category=excluded.category,tags=excluded.tags,triggers=excluded.triggers,bundles=excluded.bundles,'
+                'content=excluded.content,source=excluded.source,source_path=excluded.source_path,updated_at=excluded.updated_at',
+                (skill_data['skill_id'], skill_data['name'], skill_data['description'], skill_data['category'],
+                 json.dumps(skill_data['tags']), json.dumps(skill_data['triggers']), json.dumps(skill_data.get('bundles', [])),
+                 skill_data['content'], skill_data['source'], skill_data['source_path'],
+                 skill_data.get('enabled', True), skill_data['created_at'], skill_data['updated_at'])
+            )
+
+    def _format_code_output(self, exercise: Dict, requirements: str) -> str:
+        """Format code output from an exercise"""
+        if not exercise:
+            return "# No code could be generated from this skill"
+        
+        output = []
+        output.append(f"# Code generated based on skill requirements")
+        output.append(f"# Requirements: {requirements}")
+        output.append(f"# Language: {exercise.get('language', 'python')}")
+        output.append(f"# Difficulty: {exercise.get('difficulty', 'beginner')}")
+        output.append("")
+        
+        if exercise.get('files'):
+            for filename, code in exercise['files'].items():
+                output.append(f"# --- {filename} ---")
+                output.append(code)
+                output.append("")
+        
+        if exercise.get('starter'):
+            output.append(f"# Starter code:")
+            output.append(exercise['starter'])
+            output.append("")
+        
+        if exercise.get('solution'):
+            output.append(f"# Solution:")
+            output.append(exercise['solution'])
+            output.append("")
+        
+        return '\n'.join(output)
+
+    def _template_based_generation(self, skill: Dict, requirements: str, language: str) -> str:
+        """Fallback code generation using templates"""
+        templates = {
+            'python': self._get_python_template(skill, requirements),
+            'javascript': self._get_javascript_template(skill, requirements),
+            'java': self._get_java_template(skill, requirements),
+            'cpp': self._get_cpp_template(skill, requirements),
+            'php': self._get_php_template(skill, requirements),
+            'sql': self._get_sql_template(skill, requirements),
+            'html': self._get_html_template(skill, requirements),
+            'css': self._get_css_template(skill, requirements),
+        }
+        
+        return templates.get(language, self._get_generic_template(skill, requirements))
+
+    def _get_python_template(self, skill: Dict, requirements: str) -> str:
+        """Python code template based on skill"""
+        concept = skill['content'][:100]
+        
+        return f'''
+def solve_problem({requirements.lower().replace(' ', '_')}):
+    """
+    {concept}
+    
+    Args:
+        {requirements}
+    
+    Returns:
+        The result of the operation
+    """
+    # TODO: Implement based on skill content
+    print(f"Solving: {requirements}")
+    return None
+
+# Example usage
+if __name__ == "__main__":
+    result = solve_problem("{requirements}")
+    print(f"Result: {{result}}")
+'''
+
+    def _get_javascript_template(self, skill: Dict, requirements: str) -> str:
+        """JavaScript code template based on skill"""
+        concept = skill['content'][:100]
+        
+        return f'''
+// Function to solve: {requirements}
+// Skill: {skill['name']}
+
+function solveProblem({requirements.lower().replace(' ', '_')}) {{
+    /*
+    {concept}
+    
+    Args:
+        {requirements}
+    
+    Returns:
+        The result of the operation
+    */
+    console.log("Solving: {requirements}");
+    // TODO: Implement based on skill content
+    return null;
+}}
+
+// Example usage
+const result = solveProblem("{requirements}");
+console.log(`Result: ${{result}}`);
+'''
+
+    def _get_java_template(self, skill: Dict, requirements: str) -> str:
+        """Java code template based on skill"""
+        concept = skill['content'][:100]
+        
+        return f'''
+public class SkillSolution {{
+    // Skill: {skill['name']}
+    // Requirements: {requirements}
+    
+    public static void main(String[] args) {{
+        System.out.println("Solving: {requirements}");
+        // {concept}
+        // TODO: Implement based on skill content
+    }}
+    
+    public static Object solveProblem(String requirements) {{
+        // TODO: Implement based on skill content
+        return null;
+    }}
+}}
+'''
+
+    def _get_cpp_template(self, skill: Dict, requirements: str) -> str:
+        """C++ code template based on skill"""
+        concept = skill['content'][:100]
+        
+        return f'''
+// Skill: {skill['name']}
+// Requirements: {requirements}
+
+#include <iostream>
+#include <string>
+
+class SkillSolution {{
+public:
+    void solve(const std::string& requirements) {{
+        std::cout << "Solving: {requirements}" << std::endl;
+        // {concept}
+        // TODO: Implement based on skill content
+    }}
+}};
+
+int main() {{
+    SkillSolution solver;
+    solver.solve("{requirements}");
+    return 0;
+}}
+'''
+
+    def _get_php_template(self, skill: Dict, requirements: str) -> str:
+        """PHP code template based on skill"""
+        concept = skill['content'][:100]
+
+        return f'''
+<?php
+/**
+ * Skill: {skill['name']}
+ * Requirements: {requirements}
+ * Concept: {concept}
+ */
+
+function solveProblem($requirements) {{
+    echo "Solving: {{$requirements}}" . PHP_EOL;
+    // TODO: Implement based on skill content
+    return null;
+}}
+
+// Example usage
+$result = solveProblem("{requirements}");
+echo "Result: {{$result}}" . PHP_EOL;
+?>
+'''
+
+    def _get_sql_template(self, skill: Dict, requirements: str) -> str:
+        """SQL code template based on skill"""
+        concept = skill['content'][:100]
+        
+        return f'''
+-- Skill: {skill['name']}
+-- Requirements: {requirements}
+-- Concept: {concept}
+
+-- Query to solve: {requirements}
+SELECT 
+    -- TODO: Implement based on skill content
+    column1,
+    column2
+FROM 
+    your_table
+WHERE 
+    condition;
+'''
+
+    def _get_html_template(self, skill: Dict, requirements: str) -> str:
+        """HTML code template based on skill"""
+        concept = skill['content'][:100]
+        
+        return f'''<!DOCTYPE html>
+<html>
+<head>
+    <title>Skill Solution: {skill['name']}</title>
+    <style>
+        body {{ font-family: Arial, sans-serif; margin: 20px; }}
+        .skill-info {{ background-color: #f0f0f0; padding: 10px; border-radius: 5px; }}
+    </style>
+</head>
+<body>
+    <h1>Solution: {requirements}</h1>
+    <div class="skill-info">
+        <h2>Skill: {skill['name']}</h2>
+        <p><strong>Requirements:</strong> {requirements}</p>
+        <p><strong>Concept:</strong> {concept}</p>
+    </div>
+    <div>
+        <!-- TODO: Implement based on skill content -->
+        <p>Skill application content will go here.</p>
+    </div>
+</body>
+</html>
+'''
+
+    def _get_css_template(self, skill: Dict, requirements: str) -> str:
+        """CSS code template based on skill"""
+        concept = skill['content'][:100]
+        
+        return f'''
+/* Skill: {skill['name']} */
+/* Requirements: {requirements} */
+/* Concept: {concept} */
+
+.container {{
+    /* TODO: Implement based on skill content */
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px;
+}}
+
+.skill-card {{
+    background-color: #f8f9fa;
+    border-radius: 8px;
+    padding: 15px;
+    margin: 10px 0;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}}
+
+.skill-title {{
+    color: #333;
+    font-size: 1.2em;
+    margin-bottom: 10px;
+}}
+'''
+
+    def _get_generic_template(self, skill: Dict, requirements: str) -> str:
+        """Generic template for other languages"""
+        return f'''
+# Solution for: {skill['name']}
+# Requirements: {requirements}
+# Skill Category: {skill['category']}
+
+# TODO: Implement the solution based on the skill content
+# Skill description: {skill['description']}
+# Content preview: {skill['content'][:200]}...
+'''
+
+    def _apply_programming_skill(self, skill: Dict, task_description: str) -> Dict[str, Any]:
+        """Apply a programming skill to a task"""
+        try:
+            # Use the existing programmer module to build an exercise
+            from .proglang import build_exercise
+            
+            # Extract a relevant concept from the skill
+            concept = skill['content'][:200]
+            
+            # Build an exercise
+            exercise = build_exercise(skill.get('language', 'python'), concept, 'beginner')
+            
+            if exercise:
+                # Generate code based on the exercise
+                code = self._format_code_output(exercise, task_description)
+                
+                return {
+                    "skill_id": skill["skill_id"],
+                    "skill_name": skill["name"],
+                    "task": task_description,
+                    "language": exercise.get("language", "python"),
+                    "code": code,
+                    "exercise_id": exercise.get("id"),
+                    "verification_supported": True,
+                    "sandbox_ready": True
+                }
+            
+        except Exception as e:
+            event('warning', f"Programming skill application failed: {e}")
+        
+        return {
+            "skill_id": skill["skill_id"],
+            "skill_name": skill["name"],
+            "task": task_description,
+            "language": skill.get("language", "python"),
+            "code": f"# Code generation failed for this skill.\n# Skill: {skill['name']}\n# Description: {skill['description']}",
+            "exercise_id": None,
+            "verification_supported": False,
+            "sandbox_ready": False,
+            "error": str(e) if 'e' in locals() else "Unknown error"
+        }
+
+    def _apply_web_learning_skill(self, skill: Dict, task_description: str) -> Dict[str, Any]:
+        """Apply a web learning skill to a task"""
+        try:
+            # For web learning skills, create a structured learning plan
+            url = skill['source']
+            if not url or 'http' not in url:
+                return {"error": "No valid URL found for web learning skill"}
+            
+            # Create a learning task
+            learning_task = {
+                "skill_id": skill["skill_id"],
+                "skill_name": skill["name"],
+                "task": f"Learn about {task_description} from {url}",
+                "url": url,
+                "content_preview": skill['content'][:300],
+                "actions": [
+                    "Explore the source URL",
+                    "Extract key concepts",
+                    "Create related skills",
+                    "Apply learned knowledge"
+                ],
+                "estimated_time": "5-10 minutes",
+                "difficulty": "intermediate"
+            }
+            
+            return learning_task
+            
+        except Exception as e:
+            return {
+                "skill_id": skill["skill_id"],
+                "skill_name": skill["name"],
+                "task": task_description,
+                "error": str(e)
+            }
+
+    def _apply_ai_skill(self, skill: Dict, task_description: str) -> Dict[str, Any]:
+        """Apply an AI-related skill to a task"""
+        try:
+            # For AI skills, create analysis and response tasks
+            analysis_task = {
+                "skill_id": skill["skill_id"],
+                "skill_name": skill["name"],
+                "task": f"Analyze {task_description} using AI principles",
+                "analysis_type": skill['category'],
+                "content_sample": skill['content'][:200],
+                "techniques": ["pattern_recognition", "contextual_analysis", "inference"],
+                "tools_needed": ["AI model", "data_analysis", "context_window"],
+                "expected_output_type": "insights_and_recommendations"
+            }
+            
+            return analysis_task
+            
+        except Exception as e:
+            return {
+                "skill_id": skill["skill_id"],
+                "skill_name": skill["name"],
+                "task": task_description,
+                "error": str(e)
+            }
+
+    def _apply_security_skill(self, skill: Dict, task_description: str) -> Dict[str, Any]:
+        """Apply a security skill to a task"""
+        try:
+            # For security skills, create assessment and remediation tasks
+            security_task = {
+                "skill_id": skill["skill_id"],
+                "skill_name": skill["name"],
+                "task": f"Security assessment: {task_description}",
+                "risk_level": "high" if "security" in skill['category'].lower() else "medium",
+                "vulnerabilities": ["code_injection", "authentication_bypass", "data_leak"],
+                "remediation": [
+                    "Input validation",
+                    "Access control",
+                    "Encryption",
+                    "Monitoring and logging"
+                ],
+                "tools_needed": ["security_scanner", "vulnerability_assessment", "penetration_testing"],
+                "compliance_checks": ["OWASP", "PCI_DSS", "GDPR"]
+            }
+            
+            return security_task
+            
+        except Exception as e:
+            return {
+                "skill_id": skill["skill_id"],
+                "skill_name": skill["name"],
+                "task": task_description,
+                "error": str(e)
+            }
+
+    def _apply_generic_skill(self, skill: Dict, task_description: str) -> Dict[str, Any]:
+        """Apply a generic skill to a task"""
+        try:
+            generic_task = {
+                "skill_id": skill["skill_id"],
+                "skill_name": skill["name"],
+                "task": task_description,
+                "skill_category": skill["category"],
+                "description": skill["description"],
+                "content_summary": skill["content"][:200],
+                "suggested_actions": self._get_generic_actions(skill, task_description),
+                "estimated_complexity": self._estimate_task_complexity(skill, task_description),
+                "next_steps": self._generate_next_steps(skill)
+            }
+            
+            return generic_task
+            
+        except Exception as e:
+            return {
+                "skill_id": skill["skill_id"],
+                "skill_name": skill["name"],
+                "task": task_description,
+                "error": str(e)
+            }
+
+    def _get_generic_actions(self, skill: Dict, task_description: str) -> List[str]:
+        """Get suggested actions for a generic skill"""
+        actions = []
+        
+        if skill['category'] == 'science':
+            actions.extend(["Data collection", "Analysis", "Modeling", "Validation"])
+        elif skill['category'] == 'mathematics':
+            actions.extend(["Problem definition", "Formula application", "Calculation", "Verification"])
+        elif skill['category'] == 'webdev':
+            actions.extend(["HTML structure", "CSS styling", "JavaScript functionality"])
+        else:
+            actions.extend(["Analysis", "Implementation", "Testing", "Optimization"])
+        
+        actions.append(f"Apply skill: {skill['name']}")
+        actions.append("Document findings")
+        actions.append("Share knowledge")
+        
+        return actions
+
+    def _estimate_task_complexity(self, skill: Dict, task_description: str) -> str:
+        """Estimate the complexity of a task"""
+        complexity_indicators = []
+        
+        if len(skill['content']) > 500:
+            complexity_indicators.append("Extensive content")
+        if 'advanced' in task_description.lower():
+            complexity_indicators.append("Advanced requirements")
+        if 'complex' in task_description.lower():
+            complexity_indicators.append("Complex dependencies")
+        
+        if not complexity_indicators:
+            return "Low"
+        elif len(complexity_indicators) <= 2:
+            return "Medium"
+        else:
+            return "High"
+
+    def _generate_next_steps(self, skill: Dict) -> List[str]:
+        """Generate next steps for skill application"""
+        next_steps = [
+            "Analyze the task requirements",
+            "Apply relevant skill concepts",
+            "Generate output or solution",
+            "Validate results"
+        ]
+        
+        return next_steps

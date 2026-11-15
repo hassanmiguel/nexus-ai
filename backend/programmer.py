@@ -290,19 +290,24 @@ async def resolve_codegen_provider():
 
 def _extract_json(text):
     text = (text or '').strip()
-    fenced = re.search(r'```(?:json)?\s*(\{.*\})\s*```', text, re.S)
-    if fenced:
-        text = fenced.group(1)
-    if not text.startswith('{'):
-        start = text.find('{')
-        end = text.rfind('}')
-        if start < 0 or end <= start:
-            raise GenerationError('The model did not return a JSON program.')
-        text = text[start:end + 1]
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError as exc:
-        raise GenerationError(f'The model returned invalid JSON: {exc}') from exc
+    decoder = json.JSONDecoder()
+    starts = [match.start() for match in re.finditer(r'\{', text)]
+    if not starts:
+        raise GenerationError('The model did not return a JSON program.')
+
+    last_error = None
+    for start in starts:
+        try:
+            data, _ = decoder.raw_decode(text, start)
+        except json.JSONDecodeError as exc:
+            last_error = exc
+            continue
+        if isinstance(data, dict):
+            return data
+
+    if last_error:
+        raise GenerationError(f'The model returned invalid JSON: {last_error}') from last_error
+    raise GenerationError('The model did not return a JSON program.')
 
 
 def parse_model_program(text, request):
