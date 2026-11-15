@@ -1,10 +1,20 @@
 # NEXUS AI — Local, Repo-Aware Intelligence Core
 
+![NEXUS AI](screenshots/Screenshot%202026-11-15%20215806.png)
+
 NEXUS AI is a Windows-first, local-first research and repository intelligence agent. It can learn an entire codebase, learn individual web pages, install reusable skills, answer questions from what it learned, run autonomous research, and switch between four inference engines — including **NEXUS Core** (`nex0.2a`), its own built-in reasoning mode that needs **no Ollama and no model downloads at all**.
 
 Current release: **v0.5.0** (NEXUS Core engine `nex0.2a`).
 
 Everything is stored on your machine in SQLite. NEXUS does not require OpenAI, Anthropic, Google, or any hosted AI API key, and does not consume a hosted provider's token quota. Local models are still constrained by your CPU, RAM, GPU/VRAM and context windows.
+
+## Screenshots
+
+![Overview](screenshots/Screenshot%202026-11-15%20215806.png)
+![Storage](screenshots/Screenshot%202026-11-15%20235408.png)
+![Intelligence Center](screenshots/Screenshot%202026-11-15%20235424.png)
+![Monitor](screenshots/Screenshot%202026-11-15%20235438.png)
+![Settings](screenshots/Screenshot%202026-11-15%20235501.png)
 
 ## Quick start (Windows 10/11)
 
