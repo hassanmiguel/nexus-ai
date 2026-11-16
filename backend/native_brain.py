@@ -511,11 +511,20 @@ async def answer(question, extra_context='', history=None):
         return 'Goodbye for now. Your knowledge, repositories, web pages and skills stay on disk until next time.'
     if _code_intent(question):
         return await _forge_reply(question)
+    if re.search(r'\b(can you (code|program|write (?:code|programs?)|build (?:apps?|websites?|software))|do you (?:code|program)|are you able to (?:code|program))\b', low):
+        return (
+            'Yes. I can write and verify programs in Python, JavaScript, TypeScript, Java, C++, C#, '
+            'Rust, Go, PHP, HTML, CSS, SQL, Lua and more.\n\n'
+            'Ask me to build something specific, e.g. "write a Python calculator" or "build a photography website", '
+            'and I will generate real files, verify them, and report the result. '
+            'I also debug, refactor, review and test code.\n\n'
+            'For free-form generation I can use Ollama, llama.cpp or any OpenAI-compatible server; '
+            'offline I use curated templates plus extractive reasoning.'
+        )
     if IDENTITY.search(low):
         return _identity_text()
     if CAPABILITIES.search(low):
         return capabilities_text()
-    if URL_LEARN.search(low):
         return _url_learn_text()
     if UNKNOWN.search(low):
         return _unknown_text()
