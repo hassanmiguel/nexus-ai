@@ -15,6 +15,7 @@ Everything is stored on your machine in SQLite. NEXUS does not require OpenAI, A
 ![Intelligence Center](screenshots/Screenshot%202026-11-15%20235424.png)
 ![Monitor](screenshots/Screenshot%202026-11-15%20235438.png)
 ![Settings](screenshots/Screenshot%202026-11-15%20235501.png)
+![Latest](screenshots/Screenshot%202026-11-16%20130352.png)
 
 ## Quick start (Windows 10/11)
 

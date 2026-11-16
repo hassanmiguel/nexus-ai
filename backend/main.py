@@ -445,9 +445,16 @@ async def intelligence_registry():
     with connect() as db:
         skill_rows = db.execute('SELECT skill_id,name,description,category,enabled FROM skills ORDER BY id').fetchall()
         knowledge_count = db.execute('SELECT COUNT(*) n FROM knowledge').fetchone()['n']
+        repo_rows = db.execute('SELECT id,name,languages,summary,status FROM repos').fetchall()
     learned = [{'id': r['skill_id'], 'name': r['name'], 'description': r['description'],
                 'module': 'learned skill', 'available': bool(r['enabled']),
                 'category': r['category']} for r in skill_rows]
+    for r in repo_rows:
+        learned.append({'id': 'repo_' + str(r['id']), 'name': r['name'],
+                        'description': (r['summary'] or '')[:120] or 'Learned repository',
+                        'module': 'repo skill', 'available': r['status'] == 'ready',
+                        'category': 'repository'})
+    knowledge_count = knowledge_count + len(repo_rows)
     static = intelligence_engine.skill_registry()
     return {'capabilities': static,
             'learned_skills': learned,
