@@ -621,7 +621,7 @@ def capability_summary():
 
 
 async def forge_with_research(request, recipe_id=None, provider=None):
-    """Research the web for concepts, then forge a program. Stores learned concepts."""
+    """Research the web for concepts, store them, then forge a program. Never raises on missing model."""
     request = (request or '').strip()
     learned = []
     context_parts = []
@@ -650,7 +650,26 @@ async def forge_with_research(request, recipe_id=None, provider=None):
             context_parts.append(f"[{title}] {clip(text, 1500)}")
             event('program', f'Researched concept for program from {url}')
     context = "\n\n".join(context_parts) if context_parts else None
-    program = await forge(request, recipe_id=recipe_id, provider=provider, context=context)
-    if learned:
-        program['researched'] = learned
-    return program
+    if not recipe_id:
+        try:
+            matches = recipes.detect(request, limit=1)
+            if matches:
+                recipe_id = matches[0]['id']
+        except Exception:
+            pass
+    try:
+        program = await forge(request, recipe_id=recipe_id, provider=provider, context=context)
+        if learned:
+            program['researched'] = learned
+        return program
+    except GenerationError as exc:
+        # Could not generate code; return a structured result so the caller can report learning.
+        return {
+            'id': None,
+            'name': request,
+            'status': 'researched',
+            'verified': False,
+            'researched': learned,
+            'learned_summary': clip("\n".join(context_parts), 3000) if context_parts else '',
+            'error': str(exc),
+        }

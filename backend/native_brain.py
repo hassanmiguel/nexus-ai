@@ -444,6 +444,26 @@ async def _forge_reply(question):
             'on `auto` in Settings, then ask again.\n'
             '- Browse the templates in **Code Studio** to see exact examples.'
         )
+    # If research happened but no code was generated, report what was learned.
+    if not program.get('id'):
+        learned = program.get('researched') or []
+        summary = program.get('learned_summary') or ''
+        lines = ['**I researched this but could not generate runnable code yet.**', '']
+        if learned:
+            lines.append('**Concepts learned from the web (stored for future use):**')
+            for u in learned:
+                lines.append(f'- {u}')
+            lines.append('')
+        if summary:
+            lines.append('**Extracted notes:**')
+            lines.append('```')
+            lines.append(clip(summary, 1500))
+            lines.append('```')
+            lines.append('')
+        lines.append('To turn this into a program:')
+        lines.append('- Start Ollama (or another local model) and ask again — I will use the learned concepts as context.')
+        lines.append('- Or pick a close built-in template from **Code Studio**.')
+        return '\n'.join(lines)
     files = program.get('files') or []
     lines = [f'**Program written: {program["name"]}**', '']
     lines.append(f'- **Language / kind:** {program["language"]} · {program["kind"]}')
@@ -591,6 +611,21 @@ async def answer(question, extra_context='', history=None):
         sections.append('### Live tool observations\n' + clip(extra_context, 6000))
 
     if not sections:
+        # Try to learn from the web when permission is granted, so questions teach NEXUS.
+        learned_note = ''
+        if read_bool('permission_internet'):
+            try:
+                from .research import search_web, fetch_page
+                from .memory import store_knowledge
+                results = await search_web(question, limit=3)
+                if results:
+                    url = results[0].get('url')
+                    title, text = await fetch_page(url)
+                    store_knowledge(title, clip(text, 4000), url, topic=question, verification='web-learned')
+                    learned_note = (f'\n\nI also fetched and stored a reference page for this question: **{title}** '
+                                    f'({url}). Ask again to use it.')
+            except Exception:
+                learned_note = ''
         sections.append(
             '### No matching learned memory\n'
             "I don't have enough stored evidence to answer that reliably in NEXUS Core mode. "
@@ -600,7 +635,9 @@ async def answer(question, extra_context='', history=None):
             '2. **Repo Lab** → paste a GitHub URL or local folder and press *Learn repository*.\n'
             '3. **Skills** → import or enable an Antigravity skill for structured guidance.\n'
             '4. **Overview** → queue a research objective; the agent will crawl and verify public sources.\n'
-            '5. Switch the provider to **Ollama**, **llama.cpp** or **OpenAI-compatible** for free-form generation.')
+            '5. Switch the provider to **Ollama**, **llama.cpp** or **OpenAI-compatible** for free-form generation.'
+            + learned_note)
+
 
     confidence = _confidence(knowledge, experiences, chunks, web_chunks, skills, extra_context)
     notes = [
