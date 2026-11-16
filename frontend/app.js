@@ -758,6 +758,21 @@ async function seedSkills() {
     loadSkills();
   } catch (e) { toast(e.message, 'error'); }
 }
+async function importAgenticSkills() {
+  const progress = $('skillProgress');
+  progress.classList.remove('hidden');
+  progress.textContent = 'Fetching skill index from AgenticSkills.io…';
+  try {
+    const result = await api('/skills/import/agenticskills', { method: 'POST' });
+    progress.textContent = 'Imported ' + num(result.imported) + ' skills (' + num(result.skipped) + ' skipped).';
+    toast('Imported ' + num(result.imported) + ' skills from AgenticSkills.io.', 'success' in {} ? '' : '');
+    loadSkills();
+  } catch (e) {
+    progress.textContent = 'ERROR · ' + e.message;
+    toast(e.message, 'error');
+  }
+}
+
 async function openSkill(skillId) {
   try {
     const skill = await api('/skills/' + encodeURIComponent(skillId));

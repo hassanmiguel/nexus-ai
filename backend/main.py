@@ -739,6 +739,15 @@ async def skill_import(body: SkillsImport):
     return {'id': import_id, 'status': 'queued'}
 
 
+@app.post('/api/skills/import/agenticskills')
+async def skill_import_agenticskills():
+    from . import agenticskills as ag
+    try:
+        return await ag.import_agenticskills()
+    except Exception as e:
+        raise HTTPException(400, str(e))
+
+
 @app.post('/api/skills/seed')
 async def skill_seed():
     return skill_vault.seed_builtin(force=False)
