@@ -440,9 +440,21 @@ async def hardware():
 
 @app.get('/api/intelligence/registry')
 async def intelligence_registry():
-    return {'capabilities': intelligence_engine.skill_registry(),
-            'available': intelligence_engine.available_skills_count(),
-            'total': len(intelligence_engine.skill_registry())}
+    import sqlite3
+    from .database import connect
+    with connect() as db:
+        skill_rows = db.execute('SELECT skill_id,name,description,category,enabled FROM skills ORDER BY id').fetchall()
+        knowledge_count = db.execute('SELECT COUNT(*) n FROM knowledge').fetchone()['n']
+    learned = [{'id': r['skill_id'], 'name': r['name'], 'description': r['description'],
+                'module': 'learned skill', 'available': bool(r['enabled']),
+                'category': r['category']} for r in skill_rows]
+    static = intelligence_engine.skill_registry()
+    return {'capabilities': static,
+            'learned_skills': learned,
+            'learned_count': len(learned),
+            'knowledge_count': knowledge_count,
+            'available': intelligence_engine.available_skills_count() + len(learned),
+            'total': len(static) + len(learned)}
 
 
 @app.post('/api/intelligence/classify')

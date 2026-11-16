@@ -1706,13 +1706,13 @@ async function loadIntelligence() {
     if ($('icEngine')) $('icEngine').textContent = String((s.provider || {}).label || 'NEXUS CORE').toUpperCase();
     if ($('icEngineSub')) $('icEngineSub').textContent = (s.provider || {}).online ? 'ready' : 'offline';
     if ($('icKnowledge')) $('icKnowledge').textContent = num(s.knowledge_count);
-    if ($('icSkills')) $('icSkills').textContent = num(reg.available);
+    if ($('icSkills')) $('icSkills').textContent = num((s.skill_count || 0) + (reg.knowledge_count || 0));
     if ($('icConvos')) $('icConvos').textContent = num(s.conversation_count);
-    if ($('icCapCount')) $('icCapCount').textContent = (reg.available || 0) + '/' + (reg.total || 0);
-    const caps = reg.capabilities || [];
+    if ($('icCapCount')) $('icCapCount').textContent = (reg.total || 0) + ' total';
+    const caps = (reg.capabilities || []).concat(reg.learned_skills || []);
     if ($('icCaps')) {
-      $('icCaps').innerHTML = caps.map((c) => monitorRow(
-        c.name + (c.available ? '' : ' (unavailable)'), c.module
+      $('icCaps').innerHTML = caps.slice(0, 80).map((c) => monitorRow(
+        c.name + (c.available === false ? ' (off)' : ''), c.module || c.category || ''
       )).join('') || '<div class="empty">No capabilities registered.</div>';
     }
   } catch (e) { toast(e.message, 'error'); }
