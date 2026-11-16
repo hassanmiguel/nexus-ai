@@ -618,3 +618,39 @@ def capability_summary():
         'For other requests it can ask a local model, but those results are syntax-checked '
         'and never executed automatically.'
     )
+
+
+async def forge_with_research(request, recipe_id=None, provider=None):
+    """Research the web for concepts, then forge a program. Stores learned concepts."""
+    request = (request or '').strip()
+    learned = []
+    context_parts = []
+    if read_bool('permission_internet') and request:
+        try:
+            from .research import search_web, fetch_page
+            results = await search_web(request + ' programming tutorial concepts', limit=4)
+        except Exception as e:
+            event('warning', f'Program research search failed: {e}')
+            results = []
+        for r in (results or [])[:3]:
+            url = r.get('url')
+            if not url:
+                continue
+            try:
+                title, text = await fetch_page(url)
+            except Exception as e:
+                event('warning', f'Program research fetch failed for {url}: {e}')
+                continue
+            try:
+                from .memory import store_knowledge
+                store_knowledge(title, clip(text, 4000), url, topic=request, verification='web-learned')
+            except Exception:
+                pass
+            learned.append(url)
+            context_parts.append(f"[{title}] {clip(text, 1500)}")
+            event('program', f'Researched concept for program from {url}')
+    context = "\n\n".join(context_parts) if context_parts else None
+    program = await forge(request, recipe_id=recipe_id, provider=provider, context=context)
+    if learned:
+        program['researched'] = learned
+    return program

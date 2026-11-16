@@ -2268,6 +2268,50 @@ async function forgeProgram() {
   }
 }
 
+async function forgeProgramWithResearch() {
+  const button = $('programResearchBtn');
+  const progress = $('programProgress');
+  const select = $('programRecipe');
+  const recipeId = select.value || null;
+  let request = $('programRequest').value.trim();
+  if (!request && recipeId) {
+    request = 'Offline template: ' + (select.options[select.selectedIndex]?.text || recipeId);
+  }
+  if (!request) return toast('Describe the program you want, or pick a template.', 'warn');
+  button.disabled = true;
+  button.textContent = '🌐 Researching…';
+  progress.classList.remove('hidden');
+  progress.textContent = 'Searching the web for concepts, learning them, then writing the program.';
+  try {
+    const data = await api('/programs/autonomous', {
+      method: 'POST',
+      body: JSON.stringify({
+        request,
+        recipe_id: recipeId,
+        provider: $('programProvider').value || null
+      })
+    });
+    const program = data.program;
+    const learned = data.researched || [];
+    progress.textContent = 'DONE · program #' + program.id + ' · ' + program.status +
+      (program.verified ? ' · self-tests passed' : ' · not executed') +
+      (learned.length ? ' · learned ' + learned.length + ' source(s)' : '');
+    toast('Program #' + program.id + ' written' + (program.verified ? ' and verified.' : '.'),
+      program.verified ? '' : 'warn');
+    $('programRequest').value = '';
+    select.value = '';
+    renderProgramRecipeChips();
+    await loadPrograms();
+    await openProgram(program.id);
+  } catch (e) {
+    progress.textContent = 'ERROR · ' + e.message;
+    toast(e.message, 'error');
+  } finally {
+    button.disabled = false;
+    button.textContent = '🌐 Build with web research';
+  }
+}
+
 function renderProgramFiles() {
   const box = $('programFiles');
   if (!box) return;

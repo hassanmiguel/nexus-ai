@@ -428,7 +428,7 @@ def _code_intent(text):
 async def _forge_reply(question):
     from . import programmer
     try:
-        program = await programmer.forge(question)
+        program = await programmer.forge_with_research(question)
     except programmer.GenerationError as exc:
         return (
             'I can write programs, but I will not pretend I built this one.\n\n'

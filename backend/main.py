@@ -1084,6 +1084,15 @@ async def programs_generate(body: ProgramRequest):
     return {'ok': True, 'program': record}
 
 
+@app.post('/api/programs/autonomous')
+async def programs_autonomous(body: ProgramRequest):
+    try:
+        program = await programmer.forge_with_research(body.request, provider=body.provider)
+    except programmer.GenerationError as exc:
+        raise HTTPException(400, str(exc))
+    return {'ok': True, 'program': program, 'researched': program.get('researched', [])}
+
+
 @app.get('/api/programs/{program_id}')
 async def program_detail(program_id: int):
     record = programmer.get_program(program_id)
