@@ -358,6 +358,67 @@ def _direct_answer(question, knowledge, web_chunks, chunks, skills):
     return ''
 
 
+def _skill_relevant(skill, question):
+    """Use the skill retriever's own ranking instead of the stricter evidence filter.
+
+    Skill retrieval already combines semantic, metadata and body relevance. Applying
+    _relevant() afterwards incorrectly rejects good skills whenever a natural-language
+    request contains harmless words that do not appear verbatim in the skill document.
+    """
+    try:
+        score = float(skill.get('score') or 0)
+    except (TypeError, ValueError):
+        score = 0.0
+    if score >= 0.08:
+        return True
+    query_terms = keyword_set(question) - GENERIC_QUERY_WORDS
+    metadata = keyword_set(' '.join(str(skill.get(key) or '') for key in
+                                    ('name', 'description', 'category', 'tags', 'triggers')))
+    overlap = query_terms & metadata
+    if len(overlap) >= 2:
+        return True
+    return bool(overlap) and score >= 0.04 and len(query_terms) <= 4
+
+
+def _math_answer(question):
+    """Answer simple arithmetic directly without repository or skill retrieval."""
+    text = (question or '').strip()
+    if not text:
+        return None
+
+    percent = re.search(
+        r'\b(\d+(?:\.\d+)?)\s*(?:%|percent)\s+of\s+(-?\d+(?:\.\d+)?)\b',
+        text, re.I)
+    try:
+        if percent:
+            value = float(percent.group(1)) * float(percent.group(2)) / 100
+            rendered = str(int(value)) if value.is_integer() else str(value)
+            return f'**{rendered}**'
+    except (ValueError, OverflowError):
+        return None
+
+    normalized = text.replace('×', '*').replace('÷', '/').replace('−', '-')
+    match = re.search(
+        r'(?<![A-Za-z0-9_])((?:\(?\s*)?-?\d+(?:\.\d+)?'
+        r'(?:\s*\)?\s*(?:\*\*|[+\-*/%^])\s*\(?\s*-?\d+(?:\.\d+)?\s*\)?)+)',
+        normalized)
+    if not match:
+        return None
+    expression = match.group(1).strip().replace('^', '**')
+    if len(expression) > 120:
+        return None
+    try:
+        # Reuse the bounded AST evaluator; never use eval() for user input.
+        from .agents import _safe_eval
+        value = _safe_eval(expression)
+        if isinstance(value, float) and not (float('-inf') < value < float('inf')):
+            return None
+        rendered = str(int(value)) if isinstance(value, float) and value.is_integer() else str(value)
+        return f'**{rendered}**'
+    except (ArithmeticError, SyntaxError, TypeError, ValueError, OverflowError):
+        return None
+
+
 def _confidence(knowledge, experiences, chunks, web_chunks, skills, extra_context):
     points = 0
     if chunks:
@@ -529,18 +590,23 @@ async def answer(question, extra_context='', history=None):
         return 'You are welcome. Ask me anything else, or teach me a new page or repository and I will remember it.'
     if BYE.match(low) and len(question) <= 80:
         return 'Goodbye for now. Your knowledge, repositories, web pages and skills stay on disk until next time.'
+    # Deterministic arithmetic should not trigger repository/skill retrieval.
+    math_result = _math_answer(question)
+    if math_result is not None:
+        return math_result
+    # A bare capability question is not a build specification. Answer it before
+    # the code-intent detector so "can you code an app?" does not launch a
+    # generation attempt with no app requirements.
+    if re.search(r'\b(can you (?:code|program|write (?:code|programs?)|build (?:apps?|websites?|software))|do you (?:code|program)|are you able to (?:code|program))\b', low):
+        return (
+            'Yes. I can help build and verify real programs, including multi-file applications. '
+            'Tell me what the application should do, which platform it should run on, and any required features.\n\n'
+            'I can use built-in offline templates for supported requests. For open-ended code generation, '
+            'a generative provider such as Ollama, llama.cpp or an OpenAI-compatible model must be available. '
+            'I will report clearly when that provider is unavailable.'
+        )
     if _code_intent(question):
         return await _forge_reply(question)
-    if re.search(r'\b(can you (code|program|write (?:code|programs?)|build (?:apps?|websites?|software))|do you (?:code|program)|are you able to (?:code|program))\b', low):
-        return (
-            'Yes. I can write and verify programs in Python, JavaScript, TypeScript, Java, C++, C#, '
-            'Rust, Go, PHP, HTML, CSS, SQL, Lua and more.\n\n'
-            'Ask me to build something specific, e.g. "write a Python calculator" or "build a photography website", '
-            'and I will generate real files, verify them, and report the result. '
-            'I also debug, refactor, review and test code.\n\n'
-            'For free-form generation I can use Ollama, llama.cpp or any OpenAI-compatible server; '
-            'offline I use curated templates plus extractive reasoning.'
-        )
     if IDENTITY.search(low):
         return _identity_text()
     if CAPABILITIES.search(low):
@@ -556,7 +622,7 @@ async def answer(question, extra_context='', history=None):
     experiences = [row for row in experiences if _relevant(row, relevance_query)]
     chunks = [row for row in chunks if _relevant(row, relevance_query)]
     web_chunks = [row for row in web_chunks if _relevant(row, relevance_query)]
-    skills = [row for row in skills if _relevant(row, relevance_query)]
+    skills = [row for row in skills if _skill_relevant(row, relevance_query)]
     want_code = any(w in keyword_set(question) for w in CODE_HINTS) or bool(chunks)
     sections = []
     profile = _user_profile()
