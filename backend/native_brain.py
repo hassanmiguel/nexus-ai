@@ -590,17 +590,23 @@ async def answer(question, extra_context='', history=None):
         return 'You are welcome. Ask me anything else, or teach me a new page or repository and I will remember it.'
     if BYE.match(low) and len(question) <= 80:
         return 'Goodbye for now. Your knowledge, repositories, web pages and skills stay on disk until next time.'
-    # Deterministic arithmetic should not trigger repository/skill retrieval.\n    math_result = _math_answer(question)\n    if math_result is not None:\n        return math_result\n    if _code_intent(question):\n        return await _forge_reply(question)
-    if re.search(r'\b(can you (code|program|write (?:code|programs?)|build (?:apps?|websites?|software))|do you (?:code|program)|are you able to (?:code|program))\b', low):
+    # Deterministic arithmetic should not trigger repository/skill retrieval.
+    math_result = _math_answer(question)
+    if math_result is not None:
+        return math_result
+    # A bare capability question is not a build specification. Answer it before
+    # the code-intent detector so "can you code an app?" does not launch a
+    # generation attempt with no app requirements.
+    if re.search(r'\b(can you (?:code|program|write (?:code|programs?)|build (?:apps?|websites?|software))|do you (?:code|program)|are you able to (?:code|program))\b', low):
         return (
-            'Yes. I can write and verify programs in Python, JavaScript, TypeScript, Java, C++, C#, '
-            'Rust, Go, PHP, HTML, CSS, SQL, Lua and more.\n\n'
-            'Ask me to build something specific, e.g. "write a Python calculator" or "build a photography website", '
-            'and I will generate real files, verify them, and report the result. '
-            'I also debug, refactor, review and test code.\n\n'
-            'For free-form generation I can use Ollama, llama.cpp or any OpenAI-compatible server; '
-            'offline I use curated templates plus extractive reasoning.'
+            'Yes. I can help build and verify real programs, including multi-file applications. '
+            'Tell me what the application should do, which platform it should run on, and any required features.\n\n'
+            'I can use built-in offline templates for supported requests. For open-ended code generation, '
+            'a generative provider such as Ollama, llama.cpp or an OpenAI-compatible model must be available. '
+            'I will report clearly when that provider is unavailable.'
         )
+    if _code_intent(question):
+        return await _forge_reply(question)
     if IDENTITY.search(low):
         return _identity_text()
     if CAPABILITIES.search(low):
