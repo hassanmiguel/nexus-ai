@@ -390,7 +390,8 @@ PROGRAM_NOUN = (
     r'(?:program|script|application|app|game|website|web\s*page|web\s*app|cli|'
     r'command[- ]line\s+(?:tool|app)|tool|api|server|bot|scraper|crawler|calculator|'
     r'converter|tracker|dashboard|portfolio|automation|parser|database|'
-    r'chat\s*(?:server|app)|todo\s*(?:list|app)?|timer|scanner|organizer|analyzer|monitor)'
+    r'chat\s*(?:server|app)|todo\s*(?:list|app)?|timer|scanner|organizer|analyzer|monitor|'
+    r'system|management|application|platform)'
 )
 CODE_CREATE = re.compile(
     r'\b(?:write|create|build|make|generate|implement|develop|code|scaffold|program)\b'
@@ -529,6 +530,18 @@ async def answer(question, extra_context='', history=None):
         return 'You are welcome. Ask me anything else, or teach me a new page or repository and I will remember it.'
     if BYE.match(low) and len(question) <= 80:
         return 'Goodbye for now. Your knowledge, repositories, web pages and skills stay on disk until next time.'
+    # Deterministic mathematics.
+    math_text = question.lower().replace('percent of', '* 0.01 *').replace('% of', '* 0.01 *')
+    math_text = math_text.replace('what is', '').replace('calculate', '').replace('compute', '').strip(' ?=:.')
+    if re.fullmatch(r'[\d\s\+\-\*/\^\(\)\.,]+', math_text) and any(c.isdigit() for c in math_text):
+        try:
+            from .agents import _safe_eval
+            result = _safe_eval(math_text)
+            if isinstance(result, float) and result.is_integer():
+                result = int(result)
+            return str(result)
+        except Exception:
+            pass
     if _code_intent(question):
         return await _forge_reply(question)
     if re.search(r'\b(can you (code|program|write (?:code|programs?)|build (?:apps?|websites?|software))|do you (?:code|program)|are you able to (?:code|program))\b', low):

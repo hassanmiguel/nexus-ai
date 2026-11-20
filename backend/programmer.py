@@ -458,17 +458,21 @@ def _persist(built, request, source, generator):
 # --------------------------------------------------------------------------- #
 # Public generation entry point
 # --------------------------------------------------------------------------- #
-async def forge(request, recipe_id=None, provider=None, context=None):
+async def forge(request, recipe_id=None, provider=None, context=None, use_recipe=True):
     """Generate, write, verify and store a program. Raises GenerationError."""
     request = (request or '').strip()
     if not request and not recipe_id:
         raise GenerationError('Describe the program you want, or pick a recipe.')
 
     offline_error = ''
-    try:
-        built = recipes.build(recipe_id=recipe_id, request=request, context=context)
-    except LookupError as exc:
-        offline_error = str(exc)
+    built = None
+    if use_recipe:
+        try:
+            built = recipes.build(recipe_id=recipe_id, request=request, context=context)
+        except LookupError as exc:
+            offline_error = str(exc)
+            built = None
+    if built is None:
         built = await model_generate(request, provider=provider)
         built['request'] = request
         generator = 'model:' + built.get('generator', 'unknown')
@@ -650,15 +654,31 @@ async def forge_with_research(request, recipe_id=None, provider=None):
             context_parts.append(f"[{title}] {clip(text, 1500)}")
             event('program', f'Researched concept for program from {url}')
     context = "\n\n".join(context_parts) if context_parts else None
-    if not recipe_id:
+    # Prefer real model generation when a generative provider is available;
+    # only fall back to offline recipes for exact, high-confidence matches.
+    if not recipe_id and not provider:
         try:
+            from .programmer import resolve_codegen_provider
+            provider_ok = await resolve_codegen_provider()
+        except Exception:
+            provider_ok = None
+        if not provider_ok or provider_ok == 'off':
             matches = recipes.detect(request, limit=1)
-            if matches:
+            if matches and matches[0].get('score', 0) >= 25:
                 recipe_id = matches[0]['id']
+    # If a model provider is available, prefer model generation over offline recipes.
+    use_recipe = True
+    if provider:
+        use_recipe = False
+    else:
+        try:
+            from .programmer import resolve_codegen_provider
+            if await resolve_codegen_provider() not in (None, 'off'):
+                use_recipe = False
         except Exception:
             pass
     try:
-        program = await forge(request, recipe_id=recipe_id, provider=provider, context=context)
+        program = await forge(request, recipe_id=recipe_id, provider=provider, context=context, use_recipe=use_recipe)
         if learned:
             program['researched'] = learned
         return program
