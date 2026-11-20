@@ -387,7 +387,7 @@ def _math_answer(question):
         return None
 
     percent = re.search(
-        r'\\b(\\d+(?:\\.\\d+)?)\\s*(?:%|percent)\\s+of\\s+(-?\\d+(?:\\.\\d+)?)\\b',
+        r'\b(\d+(?:\.\d+)?)\s*(?:%|percent)\s+of\s+(-?\d+(?:\.\d+)?)\b',
         text, re.I)
     try:
         if percent:
@@ -399,8 +399,8 @@ def _math_answer(question):
 
     normalized = text.replace('×', '*').replace('÷', '/').replace('−', '-')
     match = re.search(
-        r'(?<![A-Za-z0-9_])((?:\\(?\\s*)?-?\\d+(?:\\.\\d+)?'
-        r'(?:\\s*\\)?\\s*(?:\\*\\*|[+\\-*/%^])\\s*\\(?\\s*-?\\d+(?:\\.\\d+)?\\s*\\)?)+)',
+        r'(?<![A-Za-z0-9_])((?:\(?\s*)?-?\d+(?:\.\d+)?'
+        r'(?:\s*\)?\s*(?:\*\*|[+\-*/%^])\s*\(?\s*-?\d+(?:\.\d+)?\s*\)?)+)',
         normalized)
     if not match:
         return None
